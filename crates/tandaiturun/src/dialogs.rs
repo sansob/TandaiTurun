@@ -443,7 +443,8 @@ mod tests {
 
     #[test]
     fn credits_match_cargo_lock() {
-        let lock = include_str!("../../../Cargo.lock");
+        // Windows checkouts may turn the line endings into CRLF.
+        let lock = include_str!("../../../Cargo.lock").replace("\r\n", "\n");
         for [name, version, ..] in super::credits() {
             let entry = format!("name = \"{name}\"\nversion = \"{version}\"");
             assert!(lock.contains(&entry), "{name} {version} is not in Cargo.lock: run scripts/gen-credits.py");
