@@ -25,7 +25,7 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
       - id: v
@@ -54,7 +54,7 @@ jobs:
             arch: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.meta.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
@@ -85,11 +85,11 @@ jobs:
         run: |
           packaging/linux/test-packages.sh dist
           mkdir -p screenshots && mv dist/screenshots/* screenshots/ && rmdir dist/screenshots
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}-screenshots
           path: screenshots/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}
           path: dist/*
@@ -106,7 +106,7 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.meta.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
@@ -132,7 +132,7 @@ jobs:
           }
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ needs.meta.outputs.version }}" "/DArch=${{ matrix.arch }}" "/DSourceDir=..\..\target\release" packaging\windows\tandaiturun.iss
           if ($LASTEXITCODE -ne 0) { exit 1 }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-${{ matrix.arch }}
           path: dist/*
@@ -141,7 +141,7 @@ jobs:
     needs: meta
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.meta.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
@@ -151,7 +151,7 @@ jobs:
       - run: cargo build --release --locked --workspace --target aarch64-apple-darwin
       - run: cargo build --release --locked --workspace --target x86_64-apple-darwin
       - run: packaging/macos/make-dmg.sh ${{ needs.meta.outputs.version }} dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-universal
           path: dist/*
@@ -160,10 +160,10 @@ jobs:
     needs: [meta, linux, windows, macos]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.meta.outputs.tag }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -193,7 +193,7 @@ jobs:
 
           Verify downloads with `SHA256SUMS.txt`. Builds are not code-signed yet: macOS and Windows ask once before the first start.
           NOTES
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.meta.outputs.tag }}
           name: TandaiTurun ${{ needs.meta.outputs.version }}

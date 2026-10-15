@@ -24,6 +24,11 @@ All notable changes to this project are documented here. The format follows
 - Code no longer shows font ligatures: `<!--` and `-->` stay as typed
   (JetBrains Mono NL).
 - Pictures, diagrams and formulas stay smooth when zoomed out and in thumbnails.
+- SVG images are drawn with the bundled fonts at a higher resolution, so
+  they stay sharp when zoomed in.
+- Dependencies: resvg 0.48 (one copy instead of two), miniz_oxide 0.9;
+  CI actions checkout v7, upload-artifact v7, download-artifact v8,
+  action-gh-release v3.
 
 ### Fixed
 - Crashes when formatting or replacing text next to emoji or CJK characters,

@@ -124,6 +124,7 @@ fn run_cli(args: &[String]) -> Option<i32> {
 fn headless_pdf(text: &str, path: &std::path::Path, allow_remote: bool) -> Vec<u8> {
     let ctx = egui::Context::default();
     egui_extras::install_image_loaders(&ctx);
+    mermaid::install_svg_loader(&ctx);
     fonts::cover(text);
     ctx.set_fonts(fonts::definitions());
     let look = view::Look {
@@ -202,6 +203,7 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
+            mermaid::install_svg_loader(&cc.egui_ctx);
             cc.egui_ctx.set_fonts(fonts::definitions());
             Ok(Box::new(app::App::new(cc, files)))
         }),

@@ -11,3 +11,7 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    ignore:
+      # Its tags pick the Rust version: `@1.85` is the MSRV check, `@stable`
+      # follows releases. Neither is an action version to bump.
+      - dependency-name: dtolnay/rust-toolchain
