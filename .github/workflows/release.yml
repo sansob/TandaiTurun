@@ -85,11 +85,11 @@ jobs:
         run: |
           packaging/linux/test-packages.sh dist
           mkdir -p screenshots && mv dist/screenshots/* screenshots/ && rmdir dist/screenshots
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}-screenshots
           path: screenshots/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}
           path: dist/*
@@ -132,7 +132,7 @@ jobs:
           }
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ needs.meta.outputs.version }}" "/DArch=${{ matrix.arch }}" "/DSourceDir=..\..\target\release" packaging\windows\tandaiturun.iss
           if ($LASTEXITCODE -ne 0) { exit 1 }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-${{ matrix.arch }}
           path: dist/*
@@ -151,7 +151,7 @@ jobs:
       - run: cargo build --release --locked --workspace --target aarch64-apple-darwin
       - run: cargo build --release --locked --workspace --target x86_64-apple-darwin
       - run: packaging/macos/make-dmg.sh ${{ needs.meta.outputs.version }} dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-universal
           path: dist/*
