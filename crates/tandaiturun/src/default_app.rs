@@ -126,8 +126,13 @@ mod imp {
     use super::Outcome;
     use std::process::Command;
 
+    /// `CREATE_NO_WINDOW`: without it every `reg` call flashes a console window.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
     fn reg(args: &[&str]) -> Result<(), String> {
-        let status = Command::new("reg").args(args).status().map_err(|e| e.to_string())?;
+        use std::os::windows::process::CommandExt;
+        let status =
+            Command::new("reg").args(args).creation_flags(CREATE_NO_WINDOW).status().map_err(|e| e.to_string())?;
         if status.success() {
             Ok(())
         } else {
