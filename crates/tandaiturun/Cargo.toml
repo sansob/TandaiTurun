@@ -1,0 +1,83 @@
+[package]
+name = "tandaiturun"
+description = "TandaiTurun: a fast, native, open-source Markdown reader and editor written in Rust."
+version.workspace = true
+edition.workspace = true
+rust-version = "1.95" # egui 0.36
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "tandaiturun"
+path = "src/main.rs"
+
+[dependencies]
+tandaiturun-core.workspace = true
+pulldown-cmark.workspace = true
+serde.workspace = true
+egui = { version = "0.36", default-features = false }
+eframe = { version = "0.36", default-features = false, features = ["glow", "wayland", "x11", "persistence"] }
+egui_extras = { version = "0.36", features = ["syntect", "image", "file", "svg"] }
+rfd = "0.17"
+webbrowser = "1"
+directories = "6"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+pdf-writer = "0.15"
+subsetter = "0.2"
+ttf-parser = "0.25"
+miniz_oxide = "0.8"
+open = "5"
+mermaid-rs-renderer = { version = "0.3", default-features = false }
+resvg = { version = "0.45", default-features = false, features = ["text"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+[package.metadata.deb]
+name = "tandaiturun"
+maintainer = "TandaiTurun contributors"
+section = "text"
+priority = "optional"
+extended-description = "TandaiTurun shows Markdown as pages, like a PDF reader (zoom, thumbnails, bookmarks, search), edits it with a live preview, and exports it to PDF or HTML. Native, written in Rust."
+# The GUI libraries are loaded at runtime (dlopen), so $auto only finds libc:
+# list them. Either X11 or Wayland is enough.
+depends = "$auto, libxkbcommon0, libegl1 | libgl1, libx11-6 | libwayland-client0"
+recommends = "libxkbcommon-x11-0, libxcursor1, libxi6, libwayland-egl1"
+assets = [
+  ["target/release/tandaiturun", "usr/bin/", "755"],
+  ["../../packaging/linux/tandaiturun.desktop", "usr/share/applications/", "644"],
+  ["../../assets/icon-256.png", "usr/share/icons/hicolor/256x256/apps/tandaiturun.png", "644"],
+  ["../../assets/fonts/OFL-*.txt", "usr/share/doc/tandaiturun/fonts/", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "tandaiturun"
+summary = "Read Markdown like a PDF, edit it like text"
+license = "MIT OR Apache-2.0"
+url = "https://github.com/sansob/TandaiTurun"
+assets = [
+  { source = "target/release/tandaiturun", dest = "/usr/bin/tandaiturun", mode = "755" },
+  { source = "packaging/linux/tandaiturun.desktop", dest = "/usr/share/applications/tandaiturun.desktop", mode = "644" },
+  { source = "assets/icon-256.png", dest = "/usr/share/icons/hicolor/256x256/apps/tandaiturun.png", mode = "644" },
+  { source = "LICENSE-MIT", dest = "/usr/share/licenses/tandaiturun/LICENSE-MIT", mode = "644", doc = true },
+  { source = "LICENSE-APACHE", dest = "/usr/share/licenses/tandaiturun/LICENSE-APACHE", mode = "644", doc = true },
+  { source = "assets/fonts/OFL-*.txt", dest = "/usr/share/licenses/tandaiturun/fonts/", mode = "644", doc = true },
+]
+
+# Same reason as for the .deb: the GUI libraries are loaded at runtime.
+[package.metadata.generate-rpm.requires]
+"libxkbcommon.so.0()(64bit)" = "*"
+"libEGL.so.1()(64bit)" = "*"
+
+[package.metadata.generate-rpm.recommends]
+"libX11.so.6()(64bit)" = "*"
+"libXcursor.so.1()(64bit)" = "*"
+"libXi.so.6()(64bit)" = "*"
+"libxkbcommon-x11.so.0()(64bit)" = "*"
+"libwayland-client.so.0()(64bit)" = "*"
+"libwayland-egl.so.1()(64bit)" = "*"

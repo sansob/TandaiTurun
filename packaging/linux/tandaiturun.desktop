@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=TandaiTurun
+GenericName=Markdown Reader
+Comment=Read Markdown like a PDF, edit it like text
+Exec=tandaiturun %F
+Icon=tandaiturun
+Terminal=false
+Categories=Office;Viewer;TextEditor;
+MimeType=text/markdown;text/x-markdown;
+Keywords=markdown;md;reader;viewer;editor;pdf;readme;
+StartupWMClass=io.github.sansob.TandaiTurun
