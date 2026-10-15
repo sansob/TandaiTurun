@@ -3176,7 +3176,7 @@ dependencies = [
  "image",
  "latex-rust",
  "mermaid-rs-renderer",
- "miniz_oxide 0.8.9",
+ "miniz_oxide 0.9.1",
  "open",
  "pdf-writer",
  "pulldown-cmark",
