@@ -10,6 +10,7 @@
 
 /// What happened, for the message shown to the user.
 pub enum Outcome {
+    #[cfg_attr(windows, allow(dead_code))]
     Done,
     /// The system settings were opened: the user finishes there.
     #[cfg_attr(not(windows), allow(dead_code))]
