@@ -28,7 +28,43 @@ fn clamp(text: &str, sel: Range<usize>) -> Range<usize> {
 /// Bold, italic, strikethrough, inline code: wraps the selection in `marker`,
 /// or removes the marker when the selection is already wrapped. With nothing
 /// selected the markers are inserted with the cursor between them.
+///
+/// Line prefixes (`# `, `- `, `> `…) stay outside the markers, and a
+/// selection over several lines is wrapped line by line, because Markdown
+/// emphasis can't cross a line break between blocks.
 pub fn toggle_wrap(text: &str, sel: Range<usize>, marker: &str) -> Edit {
+    let sel = clamp(text, sel);
+    let span = line_span(text, &sel);
+    if !text[sel.clone()].contains('\n') {
+        let line = &text[span.clone()];
+        let (_, body, _) = split_prefix(line);
+        let content_start = span.start + (line.len() - body.len());
+        let start = sel.start.max(content_start.min(sel.end));
+        return toggle_wrap_span(text, start..sel.end.max(start), marker);
+    }
+    // Line by line, from the last one, so earlier offsets stay valid.
+    let mut out = text.to_string();
+    let mut starts = vec![span.start];
+    starts.extend(text[span.clone()].match_indices('\n').map(|(i, _)| span.start + i + 1));
+    let mut grew: isize = 0;
+    for &ls in starts.iter().rev() {
+        let le = text[ls..].find('\n').map_or(text.len(), |i| ls + i).min(span.end);
+        let line = &text[ls..le];
+        let (_, body, _) = split_prefix(line);
+        let a = sel.start.max(ls + (line.len() - body.len()));
+        let b = sel.end.min(le);
+        if a >= b || text[a..b].trim().is_empty() {
+            continue;
+        }
+        let e = toggle_wrap_span(&out, a..b, marker);
+        grew += e.text.len() as isize - out.len() as isize;
+        out = e.text;
+    }
+    let end = (span.end as isize + grew) as usize;
+    Edit { text: out, selection: span.start..end }
+}
+
+fn toggle_wrap_span(text: &str, sel: Range<usize>, marker: &str) -> Edit {
     let sel = clamp(text, sel);
     let m = marker.len();
     let inner = &text[sel.clone()];
@@ -269,11 +305,23 @@ pub fn continue_list(text: &str, cursor: usize) -> Option<Edit> {
         _ => return None,
     };
     if body.trim().is_empty() {
-        // An empty item ends the list: remove its marker.
-        let mut out = String::with_capacity(text.len());
+        // An empty nested item moves one level out.
+        if !indent.is_empty() {
+            let e = self::indent(text, span.clone(), true);
+            let at = e.text[..span.start].len() + (span.end - span.start) - (text.len() - e.text.len());
+            return Some(Edit { selection: at..at, text: e.text });
+        }
+        // An empty top-level item ends the list: the marker goes, and a blank
+        // line keeps what comes next out of the list.
+        let mut out = String::with_capacity(text.len() + 1);
         out.push_str(&text[..span.start]);
-        out.push_str(&text[span.end..]);
-        return Some(Edit { text: out, selection: span.start..span.start });
+        let after = &text[span.end..];
+        if !after.starts_with('\n') {
+            out.push('\n');
+        }
+        let at = out.len();
+        out.push_str(after);
+        return Some(Edit { text: out, selection: at..at });
     }
     let insert = format!("\n{indent}{prefix}");
     let mut out = String::with_capacity(text.len() + insert.len());
@@ -357,6 +405,19 @@ mod tests {
     }
 
     #[test]
+    fn wrapping_keeps_line_prefixes_and_works_per_line() {
+        // The whole heading line selected: the `# ` stays a heading.
+        assert_eq!(toggle_wrap("# hello world", 0..13, "**").text, "# **hello world**");
+        assert_eq!(toggle_wrap("- item", 0..6, "*").text, "- *item*");
+        // Several lines: each one on its own, blank lines left alone.
+        let e = toggle_wrap("# Title\n\nsome text\n- item", 0..26, "**");
+        assert_eq!(e.text, "# **Title**\n\n**some text**\n- **item**");
+        assert_eq!(e.selection, 0..e.text.len());
+        // And back.
+        assert_eq!(toggle_wrap(&e.text, e.selection.clone(), "**").text, "# Title\n\nsome text\n- item");
+    }
+
+    #[test]
     fn line_kinds_toggle() {
         let t = "one\ntwo\nthree";
         assert_eq!(set_line_kind(t, 0..7, LineKind::Bullet).text, "- one\n- two\nthree");
@@ -395,7 +456,14 @@ mod tests {
         assert_eq!((e.text.as_str(), e.selection), ("- one\n- ", 8..8));
         assert_eq!(continue_list("  9) nine", 9).unwrap().text, "  9) nine\n  10) ");
         assert_eq!(continue_list("- [x] done", 10).unwrap().text, "- [x] done\n- [ ] ");
-        assert_eq!(continue_list("- one\n- ", 8).unwrap().text, "- one\n");
+        // Ending a list leaves a blank line, so the next text is a paragraph.
+        let e = continue_list("- one\n- ", 8).unwrap();
+        assert_eq!((e.text.as_str(), e.selection.clone()), ("- one\n\n", 7..7));
+        // An empty nested item moves one level out first.
+        let e = continue_list("- one\n- \nnext", 8).unwrap();
+        assert_eq!((e.text.as_str(), e.selection.clone()), ("- one\n\nnext", 6..6));
+        let e = continue_list("- one\n  - ", 10).unwrap();
+        assert_eq!((e.text.as_str(), e.selection.clone()), ("- one\n- ", 8..8));
         assert!(continue_list("plain", 5).is_none());
         assert!(continue_list("- one", 2).is_none());
     }

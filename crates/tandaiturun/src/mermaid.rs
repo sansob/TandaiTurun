@@ -33,7 +33,7 @@ fn fontdb() -> Arc<resvg::usvg::fontdb::Database> {
         }
         db.set_sans_serif_family("Inter");
         db.set_serif_family("Inter");
-        db.set_monospace_family("JetBrains Mono");
+        db.set_monospace_family("JetBrains Mono NL");
         Arc::new(db)
     })
     .clone()
@@ -45,6 +45,15 @@ const MAX_PIXELS: f32 = 4096.0;
 
 fn css(c: Color32) -> String {
     format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b())
+}
+
+/// A diagram as SVG for the HTML export (light theme, page background).
+pub fn svg(src: &str) -> Option<String> {
+    let mut opts = mermaid_rs_renderer::RenderOptions::default();
+    opts.theme.background = "transparent".into();
+    opts.layout.fast_text_metrics = true;
+    let svg = mermaid_rs_renderer::render_with_options(src, opts).ok()?;
+    Some(svg[svg.find("<svg")?..].to_string())
 }
 
 fn render_png(src: &str, dark: bool, background: Color32) -> Result<(Vec2, Vec<u8>), String> {
@@ -81,6 +90,71 @@ pub fn rasterize_svg(data: &[u8], scale: f32) -> Option<image::RgbaImage> {
     resvg::render(&tree, resvg::tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
     // tiny-skia pixels are premultiplied; PNG round trip un-premultiplies them.
     image::load_from_memory(&pixmap.encode_png().ok()?).ok().map(|i| i.into_rgba8())
+}
+
+/// SVG images (local files and allowed internet ones) for egui, drawn with
+/// the bundled fonts at the diagrams' resolution so they stay sharp when
+/// zoomed in. The texture keeps the SVG's own size for the layout.
+struct SvgLoader {
+    cache: Mutex<HashMap<String, Result<Arc<egui::ColorImage>, String>>>,
+}
+
+impl egui::load::ImageLoader for SvgLoader {
+    fn id(&self) -> &str {
+        egui::generate_loader_id!(SvgLoader)
+    }
+
+    fn load(&self, ctx: &egui::Context, uri: &str, _: egui::SizeHint) -> egui::load::ImageLoadResult {
+        use egui::load::{BytesPoll, ImagePoll, LoadError};
+        if !egui::load::has_extension(uri, "svg") && !uri.ends_with(".svg") {
+            return Err(LoadError::NotSupported);
+        }
+        if let Some(r) = self.cache.lock().ok().and_then(|c| c.get(uri).cloned()) {
+            return r.map(|image| ImagePoll::Ready { image }).map_err(LoadError::Loading);
+        }
+        match ctx.try_load_bytes(uri)? {
+            BytesPoll::Pending { size } => Ok(ImagePoll::Pending { size }),
+            BytesPoll::Ready { bytes, .. } => {
+                let result = svg_image(&bytes).map(Arc::new).ok_or_else(|| "unreadable SVG".to_string());
+                if let Ok(mut c) = self.cache.lock() {
+                    c.insert(uri.to_owned(), result.clone());
+                }
+                result.map(|image| ImagePoll::Ready { image }).map_err(LoadError::Loading)
+            }
+        }
+    }
+
+    fn forget(&self, uri: &str) {
+        if let Ok(mut c) = self.cache.lock() {
+            c.remove(uri);
+        }
+    }
+
+    fn forget_all(&self) {
+        if let Ok(mut c) = self.cache.lock() {
+            c.clear();
+        }
+    }
+
+    fn byte_size(&self) -> usize {
+        self.cache.lock().map_or(0, |c| c.values().map(|r| r.as_ref().map_or(0, |i| i.pixels.len() * 4)).sum())
+    }
+}
+
+fn svg_image(data: &[u8]) -> Option<egui::ColorImage> {
+    let options = resvg::usvg::Options { fontdb: fontdb(), font_family: "Inter".into(), ..Default::default() };
+    let size = resvg::usvg::Tree::from_data(data, &options).ok()?.size();
+    let img = rasterize_svg(data, SCALE)?;
+    let pixels = [img.width() as usize, img.height() as usize];
+    Some(
+        egui::ColorImage::from_rgba_unmultiplied(pixels, img.as_raw())
+            .with_source_size(Vec2::new(size.width(), size.height())),
+    )
+}
+
+/// Lets egui show SVG images (see [`SvgLoader`]).
+pub fn install_svg_loader(ctx: &egui::Context) {
+    ctx.add_image_loader(Arc::new(SvgLoader { cache: Mutex::new(HashMap::new()) }));
 }
 
 /// Renders (or fetches from the cache) a diagram and registers its image with egui.

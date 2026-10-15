@@ -4,7 +4,7 @@ members = ["crates/tandaiturun-core", "crates/tandaiturun"]
 default-members = ["crates/tandaiturun-core", "crates/tandaiturun"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -15,7 +15,7 @@ keywords = ["markdown", "viewer", "editor", "reader", "desktop"]
 categories = ["text-editors", "gui"]
 
 [workspace.dependencies]
-tandaiturun-core = { path = "crates/tandaiturun-core", version = "0.1.1" }
+tandaiturun-core = { path = "crates/tandaiturun-core", version = "0.1.2" }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 serde = { version = "1", features = ["derive"] }
 

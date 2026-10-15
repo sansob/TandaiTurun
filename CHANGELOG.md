@@ -6,6 +6,46 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-15
+
+### Added
+- Chinese, Japanese, Korean, Arabic, Hebrew, Indic, Thai and other scripts:
+  fonts are borrowed from the system when a document needs them, on screen and
+  in the PDF (with proper shaping: joined Arabic letters, Indic conjuncts,
+  right-to-left words).
+- HTML export embeds formulas and Mermaid diagrams as SVG and local images as
+  data, so the file shows the same thing wherever it's opened. Scripts and
+  other active HTML in a document are shown as text, not run.
+- A notice when the open file is deleted or moved, with Save / Save As.
+
+### Changed
+- Footnotes are numbered in order of reference (¹ ²…), like on GitHub.
+- Tables too wide for the page are set in smaller type instead of being cut off.
+- Code no longer shows font ligatures: `<!--` and `-->` stay as typed
+  (JetBrains Mono NL).
+- Pictures, diagrams and formulas stay smooth when zoomed out and in thumbnails.
+- SVG images are drawn with the bundled fonts at a higher resolution, so
+  they stay sharp when zoomed in.
+- Dependencies: resvg 0.48 (one copy instead of two), miniz_oxide 0.9;
+  CI actions checkout v7, upload-artifact v7, download-artifact v8,
+  action-gh-release v3.
+
+### Fixed
+- Crashes when formatting or replacing text next to emoji or CJK characters,
+  and when a file being edited was reloaded from disk.
+- Bold, italic and the like on a heading or list line wrapped the `#` or `-`
+  too; several selected lines are now wrapped one by one.
+- The Undo and Redo buttons did nothing.
+- Ctrl+Shift+X and Ctrl+Shift+C cut and copied instead of making text
+  strikethrough or code; Ctrl+Alt+1 and Ctrl+Alt+2 zoomed instead of making
+  a heading.
+- Enter on a selection inside a list kept the selected text.
+- Replace skipped every other match.
+- Two Page view: Page Down and Next Page didn't move. Single Page view:
+  zooming jumped back to the first page.
+- Saving replaced a symbolic link with a file and reset the file's permissions.
+- PDF: links to a heading that doesn't exist are left out.
+
 ## [0.1.1] - 2026-10-15
 
 ### Added
@@ -58,6 +98,7 @@ First release.
 - Packages: Windows installer and zip, macOS universal `.dmg`, `.deb`, `.rpm`,
   AppImage and `.tar.gz`, built and tested by GitHub Actions.
 
-[Unreleased]: https://github.com/sansob/TandaiTurun/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/sansob/TandaiTurun/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/sansob/TandaiTurun/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/sansob/TandaiTurun/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/sansob/TandaiTurun/releases/tag/v0.1.0

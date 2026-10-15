@@ -22,20 +22,21 @@ pulldown-cmark.workspace = true
 serde.workspace = true
 egui = { version = "0.36", default-features = false }
 eframe = { version = "0.36", default-features = false, features = ["glow", "wayland", "x11", "persistence"] }
-egui_extras = { version = "0.36", features = ["syntect", "image", "file", "svg"] }
+egui_extras = { version = "0.36", features = ["syntect", "image", "file"] }
 rfd = "0.17"
 webbrowser = "1"
 directories = "6"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 pdf-writer = "0.15"
 subsetter = "0.2"
+harfrust = "0.12"
 ttf-parser = "0.25"
-miniz_oxide = "0.8"
+miniz_oxide = "0.9"
 open = "5"
 latex-rust = "2.1"
 ureq = { version = "3", default-features = false, features = ["rustls", "gzip", "platform-verifier"] }
 mermaid-rs-renderer = { version = "0.3", default-features = false }
-resvg = { version = "0.45", default-features = false, features = ["text"] }
+resvg = { version = "0.48", default-features = false, features = ["text"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

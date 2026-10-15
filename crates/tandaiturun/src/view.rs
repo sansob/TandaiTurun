@@ -145,7 +145,6 @@ pub struct DocView {
     canvas_size: Vec2,
     viewport_size: Vec2,
     keep_ratio: Option<f32>,
-    pub has_focus: bool,
     drag_select: bool,
 }
 
@@ -166,7 +165,6 @@ impl Default for DocView {
             canvas_size: Vec2::ZERO,
             viewport_size: Vec2::new(800.0, 600.0),
             keep_ratio: None,
-            has_focus: false,
             drag_select: false,
         }
     }
@@ -232,6 +230,17 @@ impl DocView {
                 self.top_flow / total
             }
             _ => 0.0,
+        }
+    }
+
+    /// Next / previous page, or row of pages in Two Page view.
+    pub fn step_page(&mut self, forward: bool) {
+        let n = self.page_count();
+        let step = if self.mode == PageMode::TwoPage { 2 } else { 1 };
+        let row = self.current_page - self.current_page % step;
+        let page = if forward { row + step } else { row.saturating_sub(step) };
+        if page < n {
+            self.go_to_page(page);
         }
     }
 
@@ -306,6 +315,7 @@ impl DocView {
             base_dir,
             pixels_per_point: ctx.pixels_per_point(),
             allow_remote: look.allow_remote,
+            fonts: crate::layout::font_count(ctx),
         };
         let stale = self.key.as_ref() != Some(&(rev, params.clone()));
         let images_ready =
@@ -492,7 +502,13 @@ impl DocView {
                 }
             }
             // Flow y at the top of the viewport (for keeping the position on zoom).
-            if let Some((i, r)) = rects.iter().enumerate().find(|(_, r)| r.bottom() >= viewport.top()) {
+            // Single Page shows one page, and every page sits at the same spot.
+            let top = if self.mode == PageMode::Single {
+                rects.get(self.current_page).map(|r| (self.current_page, r))
+            } else {
+                rects.iter().enumerate().find(|(_, r)| r.bottom() >= viewport.top())
+            };
+            if let Some((i, r)) = top {
                 let span = l.pages[i];
                 self.top_flow = span.start + (viewport.top() - r.top() - l.margin).clamp(0.0, span.end - span.start);
             }
@@ -550,10 +566,6 @@ impl DocView {
                 ui.ctx().set_cursor_icon(CursorIcon::Text);
             }
 
-            if resp.clicked() || resp.drag_started() || resp.secondary_clicked() {
-                self.has_focus = true;
-                resp.request_focus();
-            }
             if resp.clicked() {
                 if let Some(url) = hover_link {
                     if let Some(anchor) = url.strip_prefix('#') {
@@ -644,9 +656,6 @@ impl DocView {
                     ui.close();
                 }
             });
-            if resp.has_focus() || resp.hovered() {
-                self.has_focus = resp.has_focus();
-            }
         });
         // Ctrl + wheel zooms.
         if out.inner_rect.contains(ui.input(|i| i.pointer.hover_pos()).unwrap_or(Pos2::new(-1.0, -1.0))) {
@@ -697,11 +706,11 @@ impl DocView {
                 i.consume_key(egui::Modifiers::COMMAND, egui::Key::A),
             )
         });
-        if page_down && self.current_page + 1 < n {
-            self.go_to_page(self.current_page + 1);
+        if page_down {
+            self.step_page(true);
         }
         if page_up {
-            self.go_to_page(self.current_page.saturating_sub(1));
+            self.step_page(false);
         }
         if home {
             self.go_to_page(0);
@@ -865,9 +874,14 @@ pub fn paint_page(
     }
 }
 
+/// Pictures, diagrams and formulas get mipmaps, so they stay smooth when the
+/// page is zoomed out or drawn as a thumbnail.
+pub const IMAGE_TEXTURE: egui::TextureOptions =
+    egui::TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear));
+
 fn paint_image(ctx: &egui::Context, painter: &egui::Painter, uri: &str, rect: Rect) {
     if let Ok(egui::load::TexturePoll::Ready { texture }) =
-        ctx.try_load_texture(uri, Default::default(), egui::SizeHint::default())
+        ctx.try_load_texture(uri, IMAGE_TEXTURE, egui::SizeHint::default())
     {
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
         painter.image(texture.id, rect, uv, Color32::WHITE);

@@ -64,6 +64,38 @@ fn typeset(tex: &str, display: bool, color: Color32) -> Result<Formula, String> 
     Ok(Formula { uri: String::new(), width, height, depth, png: png.into() })
 }
 
+/// A formula as SVG for the HTML export: glyphs are paths (no font needed),
+/// sized in `em` to follow the surrounding text, inline ones on the baseline.
+pub fn svg(tex: &str, display: bool) -> Option<String> {
+    let font = font().ok()?;
+    let ast = latex_rust::parse(tex).ok()?;
+    let style = if display { latex_rust::MathStyle::Display } else { latex_rust::MathStyle::Text };
+    let tree = latex_rust::layout(&ast, font, style).ok()?;
+    let depth = f(&tree.depth);
+    // At 10 pt, a size in pt divided by ten is a size in em.
+    let opts = latex_rust::SvgOptions {
+        font_size_pt: latex_rust::Dim::from_i64(10),
+        color: latex_rust::Color::rgb(0x1f, 0x1f, 0x1f),
+        display,
+    };
+    let svg = latex_rust::render_svg(&tree, font, &opts).ok()?;
+    let svg = &svg[svg.find("<svg")?..];
+    let attr = |name: &str| -> Option<f32> {
+        let at = svg.find(&format!(" {name}=\""))? + name.len() + 3;
+        svg[at..].split('"').next()?.trim_end_matches("pt").parse().ok()
+    };
+    let (w, h) = (attr("width")? / 10.0, attr("height")? / 10.0);
+    let tag_end = svg.find('>')?;
+    let rest = &svg[tag_end..];
+    let align = if display { String::new() } else { format!(" style=\"vertical-align:{:.3}em\"", -depth) };
+    Some(format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w:.3}em\" height=\"{h:.3}em\" viewBox=\"0 0 {:.4} {:.4}\"{align} role=\"img\" aria-label=\"{}\"{rest}",
+        w * 10.0,
+        h * 10.0,
+        tandaiturun_core::html::escape(tex),
+    ))
+}
+
 /// Typesets (or fetches from the cache) a formula and registers its image with egui.
 pub fn formula(ctx: &egui::Context, tex: &str, display: bool, color: Color32) -> Result<Arc<Formula>, String> {
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -99,6 +131,14 @@ pub fn png_for(uri: &str) -> Option<Arc<[u8]>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn svg_for_html_is_sized_in_em() {
+        let s = super::svg("x^2", false).unwrap();
+        assert!(s.starts_with("<svg xmlns="), "{s}");
+        assert!(s.contains("em\" height=") && s.contains("vertical-align:"), "{s}");
+        assert!(s.contains("<path"), "{s}");
+        assert!(super::svg("\\frac{a}{b}", true).is_some_and(|s| !s.contains("vertical-align")));
+    }
     use super::*;
 
     #[test]

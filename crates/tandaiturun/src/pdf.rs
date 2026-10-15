@@ -19,7 +19,9 @@ struct FontUse {
     face: ttf_parser::Face<'static>,
     remap: subsetter::GlyphRemapper,
     /// New glyph id → the text it stands for.
-    text: BTreeMap<u16, char>,
+    text: BTreeMap<u16, String>,
+    /// New glyph id → its id in the font.
+    old: BTreeMap<u16, u16>,
     res: String,
 }
 
@@ -65,24 +67,92 @@ impl Exporter {
             let idx = match self.by_name.get(name) {
                 Some(i) => *i,
                 None => {
-                    let face = ttf_parser::Face::parse(fonts::bytes(name), 0).ok()?;
+                    let face = ttf_parser::Face::parse(fonts::bytes(name), fonts::index(name)).ok()?;
                     let res = format!("F{}", self.fonts.len() + 1);
                     let mut remap = subsetter::GlyphRemapper::new();
                     remap.remap(0);
-                    self.fonts.push(FontUse { name, face, remap, text: BTreeMap::new(), res });
+                    self.fonts.push(FontUse {
+                        name,
+                        face,
+                        remap,
+                        text: BTreeMap::new(),
+                        old: BTreeMap::from([(0, 0)]),
+                        res,
+                    });
                     self.by_name.insert(name, self.fonts.len() - 1);
                     self.fonts.len() - 1
                 }
             };
-            let f = &mut self.fonts[idx];
-            if let Some(gid) = f.face.glyph_index(ch) {
-                let new = f.remap.remap(gid.0);
-                f.text.entry(new).or_insert(ch);
-                return Some((idx, new));
+            if let Some(gid) = self.fonts[idx].face.glyph_index(ch) {
+                return Some((idx, self.glyph(idx, gid.0, &ch.to_string())));
             }
         }
         None
     }
+
+    /// Keeps glyph `gid` of a font in the subset; returns its new id.
+    fn glyph(&mut self, font: usize, gid: u16, text: &str) -> u16 {
+        let f = &mut self.fonts[font];
+        let new = f.remap.remap(gid);
+        f.old.insert(new, gid);
+        if !text.is_empty() {
+            f.text.entry(new).or_insert_with(|| text.to_owned());
+        }
+        new
+    }
+
+    /// Shapes `text` (one font, logical order) like egui does on screen:
+    /// Arabic joining, Indic conjuncts, marks, right-to-left order.
+    /// Returns (new glyph, x, y offset up) in font units from the run start.
+    fn shape(&mut self, font: usize, text: &str) -> Vec<(u16, f32, f32)> {
+        let name = self.fonts[font].name;
+        let Ok(font_ref) = harfrust::FontRef::from_index(fonts::bytes(name), fonts::index(name)) else {
+            return Vec::new();
+        };
+        let data = harfrust::ShaperData::new(&font_ref);
+        let shaper = data.shaper(&font_ref).build();
+        let mut buffer = harfrust::UnicodeBuffer::new();
+        buffer.push_str(text);
+        buffer.guess_segment_properties();
+        let out = shaper.shape(buffer, harfrust::ShapeOptions::new());
+        let infos = out.glyph_infos();
+        // Each glyph's text: its cluster, given to the first glyph of it only.
+        let mut bounds: Vec<usize> = infos.iter().map(|i| i.cluster as usize).collect();
+        bounds.sort_unstable();
+        bounds.dedup();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut pen = 0.0;
+        let mut v = Vec::with_capacity(infos.len());
+        for (info, pos) in infos.iter().zip(out.glyph_positions()) {
+            let start = info.cluster as usize;
+            let end = bounds.iter().find(|b| **b > start).copied().unwrap_or(text.len());
+            let t = if seen.insert(start) { text.get(start..end).unwrap_or("") } else { "" };
+            let new = self.glyph(font, info.glyph_id as u16, t);
+            v.push((new, pen + pos.x_offset as f32, pos.y_offset as f32));
+            pen += pos.x_advance as f32;
+        }
+        v
+    }
+
+    /// The font that draws `ch`.
+    fn font_of(&mut self, family: &FontFamily, ch: char) -> Option<usize> {
+        self.font_for(family, ch).map(|(f, _)| f)
+    }
+}
+
+/// Characters whose look depends on their neighbours (joining, conjuncts,
+/// reordering): these are shaped as runs, not drawn one by one.
+fn needs_shaping(ch: char) -> bool {
+    matches!(ch as u32,
+        0x0300..=0x036F // combining marks
+        | 0x0590..=0x08FF // Hebrew, Arabic, Syriac, Thaana, N'Ko…
+        | 0x0900..=0x0DFF // Indic scripts, Sinhala
+        | 0x0E00..=0x0FFF // Thai, Lao, Tibetan
+        | 0x1000..=0x109F // Myanmar
+        | 0x1780..=0x17FF // Khmer
+        | 0x200C..=0x200D // zero-width (non-)joiner
+        | 0xFB1D..=0xFDFF // Hebrew and Arabic presentation forms
+        | 0xFE70..=0xFEFF)
 }
 
 /// Glyphs drawn with one font, size, colour and baseline: (font, size, colour, baseline, [(glyph, x)]).
@@ -104,50 +174,97 @@ fn text_ops(
         &job.sections[i.min(job.sections.len().saturating_sub(1))]
     };
     let byte_of: Vec<usize> = job.text.char_indices().map(|(b, _)| b).collect();
+    let chars: Vec<char> = job.text.chars().collect();
     // Backgrounds and decorations first, then the glyphs on top.
     let mut ci = 0usize;
     let mut runs: Vec<Run> = Vec::new();
     for row in &galley.rows {
         let origin = pos + row.pos.to_vec2();
-        for (gi, g) in row.glyphs.iter().enumerate() {
-            let Some(&byte) = byte_of.get(ci + gi) else { break };
+        // Glyphs and characters are walked side by side: one glyph per
+        // character, except in shaped runs (see `needs_shaping`), where egui's
+        // glyphs follow the shaper (right-to-left words come out in visual
+        // order, with extra zero-width glyphs) and the run is taken whole.
+        let mut li = 0usize;
+        let mut gi = 0usize;
+        while gi < row.glyphs.len() {
+            let g = &row.glyphs[gi];
+            let Some(&byte) = byte_of.get(ci + li) else { break };
             let sec = section_at(byte);
             let f = &sec.format;
-            let x0 = origin.x + g.pos.x;
-            let x1 = x0 + g.advance_width;
-            if f.background != Color32::TRANSPARENT {
-                let r = ERect::from_min_max(Pos2::new(x0, origin.y), Pos2::new(x1, origin.y + row.size.y));
-                let (a, b) = (to_pdf(r.left_bottom()), to_pdf(r.right_top()));
-                let (cr, cg, cb) = rgb(f.background, paper);
-                c.set_fill_rgb(cr, cg, cb);
-                c.rect(a.0, a.1, b.0 - a.0, b.1 - a.1);
-                c.fill_nonzero();
-            }
             let size = f.font_id.size;
-            for (stroke, dy) in [(f.underline, 0.15 * size), (f.strikethrough, -0.3 * size)] {
-                if stroke.width > 0.0 {
-                    let y = origin.y + g.pos.y + dy;
-                    let (a, b) = (to_pdf(Pos2::new(x0, y)), to_pdf(Pos2::new(x1, y)));
-                    let (cr, cg, cb) = rgb(stroke.color, paper);
-                    c.set_stroke_rgb(cr, cg, cb);
-                    c.set_line_width((stroke.width * k).max(0.3));
-                    c.move_to(a.0, a.1);
-                    c.line_to(b.0, b.1);
-                    c.stroke();
+            let family = &f.font_id.family;
+            let logical = chars[ci + li];
+            let mut span = (gi + 1, li + 1, None);
+            if needs_shaping(logical) && needs_shaping(g.chr) {
+                if let Some(font) = ex.font_of(family, logical) {
+                    let mut lend = li + 1;
+                    while let Some(&ch) = chars.get(ci + lend) {
+                        let same_section = byte_of.get(ci + lend).is_some_and(|b| std::ptr::eq(section_at(*b), sec));
+                        if !same_section || !needs_shaping(ch) || ex.font_of(family, ch) != Some(font) {
+                            break;
+                        }
+                        lend += 1;
+                    }
+                    let mut gend = gi + 1;
+                    while let Some(next) = row.glyphs.get(gend) {
+                        if !needs_shaping(next.chr) || ex.font_of(family, next.chr) != Some(font) {
+                            break;
+                        }
+                        gend += 1;
+                    }
+                    span = (gend, lend, Some(font));
                 }
             }
-            if g.chr.is_whitespace() && g.chr != ' ' {
-                continue;
+            let (gend, lend, shaped) = span;
+            for g in &row.glyphs[gi..gend] {
+                let x0 = origin.x + g.pos.x;
+                let x1 = x0 + g.advance_width;
+                if f.background != Color32::TRANSPARENT {
+                    let r = ERect::from_min_max(Pos2::new(x0, origin.y), Pos2::new(x1, origin.y + row.size.y));
+                    let (a, b) = (to_pdf(r.left_bottom()), to_pdf(r.right_top()));
+                    let (cr, cg, cb) = rgb(f.background, paper);
+                    c.set_fill_rgb(cr, cg, cb);
+                    c.rect(a.0, a.1, b.0 - a.0, b.1 - a.1);
+                    c.fill_nonzero();
+                }
+                for (stroke, dy) in [(f.underline, 0.15 * size), (f.strikethrough, -0.3 * size)] {
+                    if stroke.width > 0.0 {
+                        let y = origin.y + g.pos.y + dy;
+                        let (a, b) = (to_pdf(Pos2::new(x0, y)), to_pdf(Pos2::new(x1, y)));
+                        let (cr, cg, cb) = rgb(stroke.color, paper);
+                        c.set_stroke_rgb(cr, cg, cb);
+                        c.set_line_width((stroke.width * k).max(0.3));
+                        c.move_to(a.0, a.1);
+                        c.line_to(b.0, b.1);
+                        c.stroke();
+                    }
+                }
             }
-            let Some((font, gid)) = ex.font_for(&f.font_id.family, g.chr) else { continue };
             let baseline = origin.y + g.pos.y;
-            let same = runs.last().is_some_and(|r| r.0 == font && r.1 == size && r.2 == f.color && r.3 == baseline);
-            if !same {
-                runs.push((font, size, f.color, baseline, Vec::new()));
+            let mut push = |font: usize, baseline: f32, gid: u16, x: f32| {
+                let same = runs.last().is_some_and(|r| r.0 == font && r.1 == size && r.2 == f.color && r.3 == baseline);
+                if !same {
+                    runs.push((font, size, f.color, baseline, Vec::new()));
+                }
+                runs.last_mut().expect("run").4.push((gid, x));
+            };
+            if let Some(font) = shaped {
+                let text: String = chars[ci + li..ci + lend].iter().collect();
+                let left = row.glyphs[gi..gend].iter().map(|g| origin.x + g.pos.x).fold(f32::INFINITY, f32::min);
+                let scale = size / ex.fonts[font].face.units_per_em() as f32;
+                for (gid, x, up) in ex.shape(font, &text) {
+                    push(font, baseline - up * scale, gid, left + x * scale);
+                }
+            } else if !(g.chr.is_whitespace() && g.chr != ' ') {
+                if let Some((font, gid)) = ex.font_for(family, g.chr) {
+                    push(font, baseline, gid, origin.x + g.pos.x);
+                }
             }
-            runs.last_mut().expect("run").4.push((gid, x0));
+            gi = gend;
+            li = lend;
         }
-        ci += row.char_count_including_newline().0;
+        // Not `char_count_including_newline`: that counts glyphs.
+        ci += li + usize::from(row.ends_with_newline);
     }
     for (font, size, color, baseline, glyphs) in runs {
         let Some(&(_, first_x)) = glyphs.first() else { continue };
@@ -181,12 +298,7 @@ fn text_ops(
 
 /// The advance width of a remapped glyph, in font units.
 fn advance_of(fu: &FontUse, new_gid: u16) -> f32 {
-    // GlyphRemapper only maps old → new; find the old id from the kept text.
-    fu.text
-        .get(&new_gid)
-        .and_then(|ch| fu.face.glyph_index(*ch))
-        .and_then(|g| fu.face.glyph_hor_advance(g))
-        .unwrap_or(0) as f32
+    fu.old.get(&new_gid).and_then(|g| fu.face.glyph_hor_advance(ttf_parser::GlyphId(*g))).unwrap_or(0) as f32
 }
 
 struct ImageRes {
@@ -228,6 +340,7 @@ pub fn export(ctx: &egui::Context, markdown: &str, look: &Look, base_dir: Option
         base_dir: base_dir.clone(),
         pixels_per_point: ctx.pixels_per_point(),
         allow_remote: look.allow_remote,
+        fonts: layout::font_count(ctx),
     };
     let l = layout::layout(ctx, markdown, &params);
     let fetch = |uri: &str| match ctx.try_load_bytes(uri) {
@@ -254,6 +367,8 @@ pub fn render(l: &Layout, markdown: &str, title: &str, fetch: Fetch<'_>) -> Vec<
     let mut page_contents = Vec::new();
     let mut page_annots: Vec<Vec<Ref>> = vec![Vec::new(); l.pages.len()];
     let mut annots: Vec<(Ref, Rect, String)> = Vec::new();
+    // A `#anchor` link to a heading that isn't there would be a dead link.
+    let live = |url: &str| url.strip_prefix('#').is_none_or(|a| l.anchors.contains_key(a));
 
     for (pi, span) in l.pages.iter().enumerate() {
         let mut c = Content::new();
@@ -344,7 +459,7 @@ pub fn render(l: &Layout, markdown: &str, title: &str, fetch: Fetch<'_>) -> Vec<
                         c.x_object(Name(res.name.as_bytes()));
                         c.restore_state();
                     }
-                    if let Some(url) = link {
+                    if let Some(url) = link.as_ref().filter(|u| live(u)) {
                         let (a, b) = (to_pdf(rect.left_bottom()), to_pdf(rect.right_top()));
                         let id = ids.next();
                         page_annots[pi].push(id);
@@ -357,7 +472,7 @@ pub fn render(l: &Layout, markdown: &str, title: &str, fetch: Fetch<'_>) -> Vec<
         for &i in &l.page_prims[pi] {
             if let Prim::Text(t) = &l.prims[i] {
                 text_ops(&mut ex, &mut c, t.pos, &t.galley, k, &to_pdf, paper);
-                for (range, url) in &t.links {
+                for (range, url) in t.links.iter().filter(|(_, u)| live(u)) {
                     let text = &t.galley.job.text;
                     let chars = layout::byte_to_char(text, range.start)..layout::byte_to_char(text, range.end);
                     for r in char_rects(&t.galley, chars) {
@@ -465,8 +580,14 @@ pub fn render(l: &Layout, markdown: &str, title: &str, fetch: Fetch<'_>) -> Vec<
     // Fonts: subset TrueType, CID-keyed, Identity-H, with a ToUnicode map.
     for (fu, (type0, cid, desc, file, cmap)) in ex.fonts.iter().zip(font_refs) {
         let data = fonts::bytes(fu.name);
-        let Ok(sub) = subsetter::subset(data, 0, &fu.remap) else { continue };
-        let base = format!("{}+{}", subset_tag(fu.name, fu.text.len()), fu.name.replace(' ', ""));
+        let Ok(sub) = subsetter::subset(data, fonts::index(fu.name), &fu.remap) else { continue };
+        // CFF outlines (many CJK system fonts) go in as OpenType, CIDFontType0.
+        let cff = fu.face.tables().cff.is_some();
+        // System fonts are named by their path: keep the file name's letters.
+        let file_name = fu.name.rsplit(['/', '\\']).next().unwrap_or(fu.name);
+        let file_name = file_name.split('.').next().unwrap_or(file_name);
+        let clean: String = file_name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
+        let base = format!("{}+{}", subset_tag(fu.name, fu.text.len()), clean);
         let base = Name(base.as_bytes());
         let upem = fu.face.units_per_em() as f32;
         let to1000 = |v: f32| v / upem * 1000.0;
@@ -478,12 +599,14 @@ pub fn render(l: &Layout, markdown: &str, title: &str, fetch: Fetch<'_>) -> Vec<
         let info_sys = SystemInfo { registry: Str(b"Adobe"), ordering: Str(b"Identity"), supplement: 0 };
         {
             let mut cf = pdf.cid_font(cid);
-            cf.subtype(CidFontType::Type2);
+            cf.subtype(if cff { CidFontType::Type0 } else { CidFontType::Type2 });
             cf.base_font(base);
             cf.system_info(info_sys);
             cf.font_descriptor(desc);
             cf.default_width(0.0);
-            cf.cid_to_gid_map_predefined(Name(b"Identity"));
+            if !cff {
+                cf.cid_to_gid_map_predefined(Name(b"Identity"));
+            }
             let n = fu.remap.num_gids();
             let widths: Vec<f32> = (0..n).map(|g| to1000(advance_of(fu, g))).collect();
             cf.widths().consecutive(0, widths);
@@ -501,8 +624,8 @@ pub fn render(l: &Layout, markdown: &str, title: &str, fetch: Fetch<'_>) -> Vec<
         if italic != 0.0 {
             flags |= FontFlags::ITALIC;
         }
-        pdf.font_descriptor(desc)
-            .name(base)
+        let mut fd = pdf.font_descriptor(desc);
+        fd.name(base)
             .flags(flags)
             .bbox(Rect::new(
                 to1000(bb.x_min as f32),
@@ -514,12 +637,19 @@ pub fn render(l: &Layout, markdown: &str, title: &str, fetch: Fetch<'_>) -> Vec<
             .ascent(to1000(fu.face.ascender() as f32))
             .descent(to1000(fu.face.descender() as f32))
             .cap_height(to1000(fu.face.capital_height().unwrap_or(fu.face.ascender()) as f32))
-            .stem_v(80.0)
-            .font_file2(file);
-        pdf.stream(file, &deflate(&sub)).filter(Filter::FlateDecode);
+            .stem_v(80.0);
+        if cff {
+            fd.font_file3(file);
+            fd.finish();
+            pdf.stream(file, &deflate(&sub)).filter(Filter::FlateDecode).pair(Name(b"Subtype"), Name(b"OpenType"));
+        } else {
+            fd.font_file2(file);
+            fd.finish();
+            pdf.stream(file, &deflate(&sub)).filter(Filter::FlateDecode);
+        }
         let mut uc = pdf_writer::types::UnicodeCmap::new(Name(b"Custom"), info_sys);
-        for (g, ch) in &fu.text {
-            uc.pair(*g, *ch);
+        for (g, text) in &fu.text {
+            uc.pair_with_multiple(*g, text.chars());
         }
         pdf.cmap(cmap, &uc.finish());
     }
