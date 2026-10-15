@@ -227,8 +227,22 @@ fn char_to_byte(text: &str, ch: usize) -> usize {
     text.char_indices().nth(ch).map_or(text.len(), |(b, _)| b)
 }
 
+/// `r` limited to the text and moved onto character boundaries: the
+/// selection can be a frame old, from before the text changed under it.
+pub fn snap(text: &str, r: Range<usize>) -> Range<usize> {
+    let floor = |mut i: usize| {
+        i = i.min(text.len());
+        while !text.is_char_boundary(i) {
+            i -= 1;
+        }
+        i
+    };
+    let (a, b) = (floor(r.start), floor(r.end));
+    a.min(b)..b.max(a)
+}
+
 fn byte_to_char(text: &str, b: usize) -> usize {
-    text[..b.min(text.len())].chars().count()
+    text[..snap(text, b..b).start].chars().count()
 }
 
 impl Editor {
@@ -239,14 +253,28 @@ impl Editor {
     /// Applies an edit made outside the widget (toolbar, menu).
     pub fn apply(&mut self, text: &mut String, edit: Edit) {
         *text = edit.text;
+        self.cursor = snap(text, edit.selection.clone());
         self.pending = Some(edit.selection);
         self.focus_next = true;
         self.scroll_to_cursor = true;
     }
 
     pub fn format(&mut self, text: &mut String, f: Format) {
-        let e = apply_format(text, self.cursor.clone(), f);
+        let e = apply_format(text, self.selection(text), f);
         self.apply(text, e);
+    }
+
+    /// The current selection, valid for `text`.
+    pub fn selection(&self, text: &str) -> Range<usize> {
+        snap(text, self.cursor.clone())
+    }
+
+    /// Forgets the selection and search marks (the text was replaced).
+    pub fn reset(&mut self, text: &str) {
+        self.cursor = snap(text, self.cursor.clone());
+        self.pending = None;
+        self.marks.clear();
+        self.current_mark = None;
     }
 
     /// Selects a range and scrolls it into view.
@@ -263,13 +291,15 @@ impl Editor {
 
         // Keys the editor handles itself, before the TextEdit sees them.
         if focused {
-            let sel = self.cursor.clone();
+            let sel = self.selection(text);
             let mut edit: Option<Edit> = None;
             ctx.input_mut(|i| {
                 if i.consume_key(egui::Modifiers::NONE, egui::Key::Enter) {
-                    edit = Some(format::continue_list(text, sel.end).unwrap_or_else(|| {
-                        let mut t = text.clone();
-                        t.replace_range(sel.clone(), "\n");
+                    // Typing replaces the selection first, Enter included.
+                    let mut t = text.clone();
+                    t.replace_range(sel.clone(), "");
+                    edit = Some(format::continue_list(&t, sel.start).unwrap_or_else(|| {
+                        t.insert(sel.start, '\n');
                         Edit { text: t, selection: sel.start + 1..sel.start + 1 }
                     }));
                 } else if i.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab) {
@@ -285,15 +315,22 @@ impl Editor {
                 }
                 let cmd = egui::Modifiers::COMMAND;
                 let fmt = |i: &mut egui::InputState, key| i.consume_key(cmd, key);
+                // egui-winit turns Ctrl+X / Ctrl+C into Cut / Copy events even
+                // with Shift held, so Ctrl+Shift+X / C arrive as those.
+                let shifted = |i: &mut egui::InputState, ev: egui::Event| {
+                    let on = i.modifiers.command && i.modifiers.shift;
+                    let at = i.events.iter().position(|e| *e == ev).filter(|_| on);
+                    at.map(|p| i.events.remove(p)).is_some()
+                };
                 let f = if fmt(i, egui::Key::B) {
                     Some(Format::Bold)
                 } else if fmt(i, egui::Key::I) {
                     Some(Format::Italic)
                 } else if fmt(i, egui::Key::K) {
                     Some(Format::Link)
-                } else if i.consume_key(cmd | egui::Modifiers::SHIFT, egui::Key::X) {
+                } else if i.consume_key(cmd | egui::Modifiers::SHIFT, egui::Key::X) || shifted(i, egui::Event::Cut) {
                     Some(Format::Strike)
-                } else if i.consume_key(cmd | egui::Modifiers::SHIFT, egui::Key::C) {
+                } else if i.consume_key(cmd | egui::Modifiers::SHIFT, egui::Key::C) || shifted(i, egui::Event::Copy) {
                     Some(Format::Code)
                 } else {
                     [
@@ -350,6 +387,12 @@ impl Editor {
             *cache = Some((key, g.clone()));
             g
         };
+        // Before the widget runs, so a key sent along with the request (menu
+        // Undo/Redo) already lands in a focused editor this frame.
+        if self.focus_next {
+            ui.memory_mut(|m| m.request_focus(id));
+            self.focus_next = false;
+        }
         let out = egui::TextEdit::multiline(text)
             .id(id)
             .font(FontId::monospace(size))
@@ -360,10 +403,6 @@ impl Editor {
             .margin(egui::Margin { left: 20, right: 14, top: 4, bottom: 40 })
             .layouter(&mut layouter)
             .show(ui);
-        if self.focus_next {
-            out.response.request_focus();
-            self.focus_next = false;
-        }
         changed |= out.response.changed();
         let mut cursor_moved = false;
         if let Some(r) = out.cursor_range {

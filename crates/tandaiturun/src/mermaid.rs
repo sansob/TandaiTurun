@@ -33,7 +33,7 @@ fn fontdb() -> Arc<resvg::usvg::fontdb::Database> {
         }
         db.set_sans_serif_family("Inter");
         db.set_serif_family("Inter");
-        db.set_monospace_family("JetBrains Mono");
+        db.set_monospace_family("JetBrains Mono NL");
         Arc::new(db)
     })
     .clone()
@@ -45,6 +45,15 @@ const MAX_PIXELS: f32 = 4096.0;
 
 fn css(c: Color32) -> String {
     format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b())
+}
+
+/// A diagram as SVG for the HTML export (light theme, page background).
+pub fn svg(src: &str) -> Option<String> {
+    let mut opts = mermaid_rs_renderer::RenderOptions::default();
+    opts.theme.background = "transparent".into();
+    opts.layout.fast_text_metrics = true;
+    let svg = mermaid_rs_renderer::render_with_options(src, opts).ok()?;
+    Some(svg[svg.find("<svg")?..].to_string())
 }
 
 fn render_png(src: &str, dark: bool, background: Color32) -> Result<(Vec2, Vec<u8>), String> {

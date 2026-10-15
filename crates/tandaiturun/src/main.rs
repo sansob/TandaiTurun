@@ -8,6 +8,7 @@ mod default_app;
 mod dialogs;
 mod editor;
 mod fonts;
+mod html_export;
 mod i18n;
 mod i18n_id;
 mod layout;
@@ -18,6 +19,7 @@ mod panes;
 mod pdf;
 mod remote;
 mod scene;
+mod script;
 mod theme;
 mod view;
 
@@ -89,7 +91,8 @@ fn run_cli(args: &[String]) -> Option<i32> {
             let code = match tandaiturun_core::document::load(&input) {
                 Ok(f) => {
                     let title = tandaiturun_core::document::title(&f.text, Some(&input));
-                    let html = tandaiturun_core::html::document(&f.text, &title);
+                    let base = tandaiturun_core::document::canonical(&input).parent().map(|d| d.to_path_buf());
+                    let html = html_export::document(&f.text, &title, base);
                     match tandaiturun_core::document::write_atomic(&out, html.as_bytes()) {
                         Ok(()) => {
                             println!("{}", out.display());
@@ -121,6 +124,7 @@ fn run_cli(args: &[String]) -> Option<i32> {
 fn headless_pdf(text: &str, path: &std::path::Path, allow_remote: bool) -> Vec<u8> {
     let ctx = egui::Context::default();
     egui_extras::install_image_loaders(&ctx);
+    fonts::cover(text);
     ctx.set_fonts(fonts::definitions());
     let look = view::Look {
         page: layout::PageSize::A4,
@@ -146,6 +150,7 @@ fn headless_pdf(text: &str, path: &std::path::Path, allow_remote: bool) -> Vec<u
                 base_dir: base.clone(),
                 pixels_per_point: ui.ctx().pixels_per_point(),
                 allow_remote,
+                fonts: layout::font_count(ui.ctx()),
             };
             let l = layout::layout(ui.ctx(), text, &params);
             pending = l.pending_images;
@@ -172,6 +177,7 @@ fn main() -> eframe::Result {
         std::process::exit(code);
     }
     scene::init_from_env();
+    script::init_from_env();
     let files: Vec<PathBuf> = args.iter().map(PathBuf::from).collect();
 
     let mut viewport = egui::ViewportBuilder::default()
@@ -183,7 +189,7 @@ fn main() -> eframe::Result {
     if let Some(icon) = load_icon() {
         viewport = viewport.with_icon(icon);
     }
-    let scripted = scene::active();
+    let scripted = scene::active() || script::active();
     let options = eframe::NativeOptions {
         viewport,
         // Scripted screenshot scenes must not reuse the user's session.

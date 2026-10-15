@@ -56,13 +56,26 @@ pub fn load(path: &Path) -> io::Result<LoadedFile> {
 }
 
 /// Writes `bytes` to `path` atomically: a temporary file next to it, then a rename.
+/// A symlink is followed (the file it points to is replaced, the link stays)
+/// and the old file's permissions carry over to the new one.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let resolved;
+    let path = if fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        resolved = simplify(fs::canonicalize(path)?);
+        resolved.as_path()
+    } else {
+        path
+    };
+    let old = fs::metadata(path).ok();
     let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "document".into());
     let tmp = dir.join(format!(".{name}.tandaiturun.tmp"));
     {
         let mut f = fs::File::create(&tmp)?;
         f.write_all(bytes)?;
+        if let Some(m) = &old {
+            f.set_permissions(m.permissions())?;
+        }
         f.sync_all()?;
     }
     if let Err(e) = fs::rename(&tmp, path) {
@@ -153,6 +166,26 @@ mod tests {
         assert_eq!(encode(&f.text, f.line_ending, f.bom), bytes);
         let plain = decode(b"a\nb");
         assert_eq!((plain.line_ending, plain.bom), (LineEnding::Lf, false));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saving_keeps_permissions_and_symlinks() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("tandaiturun-save-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("notes.md");
+        fs::write(&file, "old").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+        let link = dir.join("link.md");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+
+        save(&link, "new", LineEnding::Lf, false).unwrap();
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_to_string(&file).unwrap(), "new");
+        assert_eq!(fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

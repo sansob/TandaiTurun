@@ -74,6 +74,7 @@ pub const ENTRIES: &[(&str, &str)] = &[
     ("Inline Code", "Kode Sebaris"),
     ("Italic", "Miring"),
     ("Keep my version", "Pakai versi saya"),
+    ("This file was deleted or moved. Save it to keep it.", "Berkas ini dihapus atau dipindahkan. Simpan agar tidak hilang."),
     ("Keyboard Shortcuts", "Pintasan Keyboard"),
     ("Language", "Bahasa"),
     ("Last Page", "Halaman Terakhir"),

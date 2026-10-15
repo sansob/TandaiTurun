@@ -280,22 +280,27 @@ fn view_menu(app: &mut App, ui: &mut egui::Ui) {
         });
         ui.menu_button(tr("Page Navigation"), |ui| {
             let n = app.doc().map_or(1, |d| d.active_view_ref().page_count());
-            let cur = app.doc().map_or(0, |d| d.active_view_ref().current_page);
             let mut go = None;
+            let mut step = None;
             if item(ui, tr("First Page"), "Home") {
                 go = Some(0);
             }
             if item(ui, tr("Previous Page"), "PgUp") {
-                go = Some(cur.saturating_sub(1));
+                step = Some(false);
             }
             if item(ui, tr("Next Page"), "PgDn") {
-                go = Some((cur + 1).min(n - 1));
+                step = Some(true);
             }
             if item(ui, tr("Last Page"), "End") {
-                go = Some(n - 1);
+                go = Some(n.saturating_sub(1));
             }
-            if let (Some(p), Some(d)) = (go, app.doc_mut()) {
-                d.active_view().go_to_page(p);
+            if let Some(d) = app.doc_mut() {
+                if let Some(p) = go {
+                    d.active_view().go_to_page(p);
+                }
+                if let Some(forward) = step {
+                    d.active_view().step_page(forward);
+                }
             }
         });
         ui.separator();
@@ -514,10 +519,10 @@ pub fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                 let n = d.active_view_ref().page_count();
                 let cur = d.active_view_ref().current_page;
                 if icon_button(ui, "⬆", tr("Previous Page"), false).clicked() {
-                    d.active_view().go_to_page(cur.saturating_sub(1));
+                    d.active_view().step_page(false);
                 }
                 if icon_button(ui, "⬇", tr("Next Page"), false).clicked() {
-                    d.active_view().go_to_page((cur + 1).min(n.saturating_sub(1)));
+                    d.active_view().step_page(true);
                 }
                 if !d.page_input_focus {
                     d.page_input = (cur + 1).to_string();
@@ -790,6 +795,29 @@ pub fn disk_banner(app: &mut App, ui: &mut egui::Ui) {
         });
 }
 
+/// The open file was deleted or moved: offer to write it back.
+pub fn missing_banner(app: &mut App, ui: &mut egui::Ui) {
+    if !app.doc().is_some_and(|d| d.disk_missing) {
+        return;
+    }
+    egui::Panel::top("missing")
+        .frame(egui::Frame::new().fill(Color32::from_rgb(0xFF, 0xF4, 0xCE)).inner_margin(Margin::symmetric(12, 6)))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(tr("This file was deleted or moved. Save it to keep it."))
+                        .color(Color32::from_rgb(0x5C, 0x46, 0x00)),
+                );
+                if ui.button(tr("Save")).clicked() {
+                    app.actions.push(Action::Save);
+                }
+                if ui.button(tr("Save As…")).clicked() {
+                    app.actions.push(Action::SaveAs);
+                }
+            });
+        });
+}
+
 /// Asks before loading internet images, which would tell their servers that
 /// the document was opened.
 pub fn remote_banner(app: &mut App, ui: &mut egui::Ui) {
@@ -841,7 +869,7 @@ pub fn status_bar(app: &mut App, ui: &mut egui::Ui) {
                 )));
                 ui.label(small(format!("{} {:.0}%", look.page.label(), v.effective_zoom(&look) * 100.0)));
                 if d.editing {
-                    let at = d.editor.cursor.start.min(d.text.len());
+                    let at = d.editor.selection(&d.text).start;
                     let line = d.text[..at].matches('\n').count() + 1;
                     let col = d.text[..at].rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
                     ui.label(small(trf(
@@ -897,11 +925,11 @@ pub fn read_mode(app: &mut App, ui: &mut egui::Ui) {
                         let v = d.active_view();
                         let n = v.page_count();
                         if ui.add(egui::Button::new("⬆").frame(false)).clicked() {
-                            v.go_to_page(v.current_page.saturating_sub(1));
+                            v.step_page(false);
                         }
                         ui.label(format!("{} / {n}", v.current_page + 1));
                         if ui.add(egui::Button::new("⬇").frame(false)).clicked() {
-                            v.go_to_page((v.current_page + 1).min(n - 1));
+                            v.step_page(true);
                         }
                         ui.add_space(8.0);
                         if ui.add(egui::Button::new("➖").frame(false)).clicked() {

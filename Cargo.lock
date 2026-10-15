@@ -3167,12 +3167,13 @@ dependencies = [
 
 [[package]]
 name = "tandaiturun"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "directories",
  "eframe",
  "egui",
  "egui_extras",
+ "harfrust",
  "image",
  "latex-rust",
  "mermaid-rs-renderer",
@@ -3193,7 +3194,7 @@ dependencies = [
 
 [[package]]
 name = "tandaiturun-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "pulldown-cmark",
 ]

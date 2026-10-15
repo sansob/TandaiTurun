@@ -73,7 +73,10 @@ pub enum Block {
     Rule,
     PageBreak,
     Footnote {
+        /// The label from the source, for the `#fn-…` anchor.
         label: String,
+        /// What's shown: its position among the references.
+        number: usize,
         blocks: Vec<Block>,
     },
     /// Raw HTML we can't render: shown as muted text.
@@ -162,6 +165,17 @@ pub fn parse(markdown: &str) -> Vec<TopBlock> {
     let mut code: Option<(String, String)> = None;
     let mut in_meta = false;
     let mut top_offset = 0usize;
+    // Footnotes are shown numbered in the order they're first referenced,
+    // like on GitHub, whatever their labels; unreferenced ones go last.
+    let mut notes: Vec<String> = Vec::new();
+    for e in Parser::new_ext(markdown, parser_options()) {
+        if let Event::FootnoteReference(l) | Event::Start(Tag::FootnoteDefinition(l)) = e {
+            if !notes.iter().any(|n| *n == *l) {
+                notes.push(l.to_string());
+            }
+        }
+    }
+    let note_number = |l: &str| notes.iter().position(|n| n == l).map_or(0, |i| i + 1);
 
     // Blocks that complete at the root go straight to `out` with their offset.
     macro_rules! push_block {
@@ -306,7 +320,10 @@ pub fn parse(markdown: &str) -> Vec<TopBlock> {
                         FrameKind::List { start, items, tight } => {
                             push_block!(stack, Block::List { start, tight, items })
                         }
-                        FrameKind::Footnote(label) => push_block!(stack, Block::Footnote { label, blocks: f.blocks }),
+                        FrameKind::Footnote(label) => {
+                            let number = note_number(&label);
+                            push_block!(stack, Block::Footnote { label, number, blocks: f.blocks })
+                        }
                         FrameKind::Cell => {
                             if let Some(Frame { kind: FrameKind::Row(cells), .. }) = stack.last_mut() {
                                 cells.push(f.inlines);
@@ -363,7 +380,7 @@ pub fn parse(markdown: &str) -> Vec<TopBlock> {
             Event::FootnoteReference(label) => {
                 let f = stack.last_mut().expect("frame");
                 f.inlines.push(Inline::Span(Span {
-                    text: format!("[{label}]"),
+                    text: note_number(&label).to_string(),
                     style: SpanStyle { sup: true, ..style },
                     link: Some(format!("#fn-{label}")),
                 }));
@@ -559,5 +576,21 @@ mod tests {
         let Block::Paragraph(i) = &b[0] else { panic!() };
         assert!(i.iter().any(|x| matches!(x, Inline::Span(s) if s.link.as_deref() == Some("#fn-1"))));
         assert!(matches!(&b[1], Block::Footnote { label, .. } if label == "1"));
+    }
+
+    #[test]
+    fn footnotes_are_numbered_by_first_reference() {
+        let b = blocks("A[^z] b[^a] c[^z].\n\n[^a]: First def.\n\n[^z]: Second def.\n");
+        let Block::Paragraph(i) = &b[0] else { panic!() };
+        let refs: Vec<&str> = i
+            .iter()
+            .filter_map(|x| match x {
+                Inline::Span(s) if s.style.sup => Some(s.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(refs, ["1", "2", "1"]);
+        assert!(matches!(&b[1], Block::Footnote { label, number: 2, .. } if label == "a"));
+        assert!(matches!(&b[2], Block::Footnote { label, number: 1, .. } if label == "z"));
     }
 }

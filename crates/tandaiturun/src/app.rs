@@ -116,6 +116,10 @@ pub struct Doc {
     pub page_input_focus: bool,
     /// Internet images were allowed for this document.
     pub allow_remote: bool,
+    /// The revision last checked for characters needing a system font.
+    fonts_rev: u64,
+    /// The file was deleted or moved away on disk.
+    pub disk_missing: bool,
 }
 
 impl Doc {
@@ -139,6 +143,8 @@ impl Doc {
             preview,
             editor: Editor::default(),
             preview_rev: 1,
+            fonts_rev: 0,
+            disk_missing: false,
             last_edit: Instant::now(),
             outline: (0, Vec::new()),
             page_input: "1".into(),
@@ -462,6 +468,7 @@ impl App {
                 d.text = f.text.clone();
                 d.saved = f.text.clone();
                 d.preview_text = f.text;
+                d.editor.reset(&d.text);
                 d.line_ending = f.line_ending;
                 d.bom = f.bom;
                 d.mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
@@ -516,7 +523,7 @@ impl App {
             dlg = dlg.set_directory(dir);
         }
         if let Some(p) = dlg.save_file() {
-            let html = tandaiturun_core::html::document(&d.text, &title);
+            let html = crate::html_export::document(&d.text, &title, d.base_dir());
             match document::write_atomic(&p, html.as_bytes()) {
                 Ok(()) => self.toast(trf("Exported {file}", &[("file", &p.display().to_string())])),
                 Err(e) => self.dialog = Some(Dialog::Error(e.to_string())),
@@ -610,7 +617,7 @@ impl App {
                 d.editor.focus_next = true;
                 d.preview.go_to_offset(offset);
             } else {
-                let at = d.editor.cursor.start;
+                let at = d.editor.selection(&d.text).start;
                 d.view.go_to_offset(at);
             }
         }
@@ -680,8 +687,7 @@ impl App {
                     self.find_focus = true;
                     if let Some(sel) = self.doc().and_then(|d| {
                         if d.editing {
-                            let s = d.editor.cursor.clone();
-                            Some(d.text[s].to_string())
+                            Some(d.text[d.editor.selection(&d.text)].to_string())
                         } else {
                             d.view.selected_text()
                         }
@@ -712,18 +718,24 @@ impl App {
                     if let Some(d) = self.doc_mut() {
                         if d.editing {
                             d.editor.focus_next = true;
-                            let modifiers = if matches!(a, Action::Redo) {
-                                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT
+                            // What a real Ctrl+Z (⌘Z on macOS) looks like.
+                            let mut modifiers = if cfg!(target_os = "macos") {
+                                egui::Modifiers::MAC_CMD | egui::Modifiers::COMMAND
                             } else {
-                                egui::Modifiers::COMMAND
+                                egui::Modifiers::CTRL | egui::Modifiers::COMMAND
                             };
-                            self.inject_keys.push(egui::Event::Key {
-                                key: egui::Key::Z,
-                                physical_key: None,
-                                pressed: true,
-                                repeat: false,
-                                modifiers,
-                            });
+                            modifiers.shift = matches!(a, Action::Redo);
+                            self.inject_keys.extend([
+                                egui::Event::ModifiersChanged(modifiers),
+                                egui::Event::Key {
+                                    key: egui::Key::Z,
+                                    physical_key: None,
+                                    pressed: true,
+                                    repeat: false,
+                                    modifiers,
+                                },
+                                egui::Event::ModifiersChanged(egui::Modifiers::NONE),
+                            ]);
                             ctx.request_repaint();
                         }
                     }
@@ -741,7 +753,9 @@ impl App {
         let mut reload = Vec::new();
         for (i, d) in self.docs.iter_mut().enumerate() {
             let Some(p) = &d.path else { continue };
-            let Ok(m) = std::fs::metadata(p).and_then(|m| m.modified()) else { continue };
+            let meta = std::fs::metadata(p);
+            d.disk_missing = meta.as_ref().is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound);
+            let Ok(m) = meta.and_then(|m| m.modified()) else { continue };
             if d.mtime.is_some_and(|old| old != m) {
                 d.mtime = Some(m);
                 if !d.dirty() && self.settings.auto_reload {
@@ -829,13 +843,15 @@ impl App {
             if i.consume_key(cmd, Key::Minus) {
                 zoom = Some(-1);
             }
-            if i.consume_key(cmd, Key::Num0) {
+            // Ctrl+Alt+digit is a heading in the editor, not a zoom.
+            let alt = i.modifiers.alt;
+            if !alt && i.consume_key(cmd, Key::Num0) {
                 zoom = Some(10);
             }
-            if i.consume_key(cmd, Key::Num1) {
+            if !alt && i.consume_key(cmd, Key::Num1) {
                 zoom = Some(11);
             }
-            if i.consume_key(cmd, Key::Num2) {
+            if !alt && i.consume_key(cmd, Key::Num2) {
                 zoom = Some(12);
             }
             if i.consume_key(M::NONE, Key::Escape) {
@@ -914,7 +930,7 @@ impl App {
                 d.editor.current_mark = if marks.is_empty() {
                     None
                 } else {
-                    let at = d.editor.cursor.start;
+                    let at = d.editor.selection(&d.text).start;
                     Some(marks.iter().position(|m| m.start >= at).unwrap_or(0))
                 };
                 d.editor.marks = marks;
@@ -943,8 +959,14 @@ impl App {
         d.changed();
         d.editor.marks.clear();
         d.editor.current_mark = None;
+        // The recount already makes the first match after the replacement
+        // current: select it rather than stepping past it.
         self.update_search();
-        self.find_step(true);
+        if let Some(d) = self.doc_mut() {
+            if let Some(r) = d.editor.current_mark.and_then(|c| d.editor.marks.get(c).cloned()) {
+                d.editor.select(r);
+            }
+        }
     }
 
     pub fn replace_all(&mut self) {
@@ -955,7 +977,7 @@ impl App {
         }
         let (t, n) = tandaiturun_core::search::replace_all(&d.text, &query, &replacement, opts);
         if n > 0 {
-            let at = d.editor.cursor.start.min(t.len());
+            let at = crate::editor::snap(&t, d.editor.cursor.start..d.editor.cursor.start).start;
             d.editor.apply(&mut d.text, tandaiturun_core::format::Edit { text: t, selection: at..at });
             d.changed();
         }
@@ -1040,6 +1062,18 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // Scripts the bundled fonts lack: borrow fonts from the system.
+        let mut new_fonts = false;
+        for d in &mut self.docs {
+            if d.fonts_rev != d.rev {
+                d.fonts_rev = d.rev;
+                new_fonts |= crate::fonts::cover(&d.text);
+            }
+        }
+        if new_fonts {
+            ctx.set_fonts(crate::fonts::definitions());
+            ctx.request_repaint();
+        }
         let dark = match self.settings.ui_theme {
             UiTheme::Light => false,
             UiTheme::Dark => true,
@@ -1058,9 +1092,13 @@ impl eframe::App for App {
         self.handle_close_request(&ctx);
         self.update_layouts(&ctx);
         self.update_search();
+        // Page keys go to the pages unless a text field (editor, find box,
+        // page number) is being typed in.
+        let typing = ctx.text_edit_focused();
+        let dialog_open = self.dialog.is_some();
         if let Some(d) = self.doc_mut() {
-            if !d.editing && d.view.has_focus {
-                d.view.handle_keys(&ctx);
+            if !typing && !dialog_open {
+                d.active_view().handle_keys(&ctx);
             }
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen || self.read_mode && false));
@@ -1079,6 +1117,7 @@ impl eframe::App for App {
                     crate::chrome::find_bar(self, ui);
                 }
                 crate::chrome::disk_banner(self, ui);
+                crate::chrome::missing_banner(self, ui);
                 crate::chrome::remote_banner(self, ui);
                 crate::chrome::status_bar(self, ui);
                 crate::panes::nav_rail(self, ui);
@@ -1103,6 +1142,7 @@ impl eframe::App for App {
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         crate::scene::tick(self, &ctx);
+        crate::script::tick(self, &ctx);
     }
 
     /// Events the app sends itself (menu Undo/Redo, scripted scenes), fed in
@@ -1119,7 +1159,7 @@ impl eframe::App for App {
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         self.settings.session = self.docs.iter().filter_map(|d| d.path.clone()).collect();
-        if crate::scene::active() {
+        if crate::scene::active() || crate::script::active() {
             return;
         }
         eframe::set_value(storage, "settings", &self.settings);

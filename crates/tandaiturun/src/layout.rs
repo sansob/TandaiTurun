@@ -73,6 +73,13 @@ pub struct Params {
     pub pixels_per_point: f32,
     /// Load images from the internet (the reader allowed it).
     pub allow_remote: bool,
+    /// How many fonts egui has: system fonts are added as documents need them.
+    pub fonts: usize,
+}
+
+/// The number of fonts installed in `ctx`, for [`Params::fonts`].
+pub fn font_count(ctx: &egui::Context) -> usize {
+    ctx.fonts(|f| f.definitions().font_data.len())
 }
 
 #[derive(Clone)]
@@ -797,7 +804,7 @@ impl Builder<'_> {
                 self.pending = 0.0;
                 self.fresh = true;
             }
-            Block::Footnote { label, blocks } => {
+            Block::Footnote { label, number, blocks } => {
                 self.begin(0.6 * s);
                 self.anchors.insert(format!("fn-{label}"), self.y);
                 let saved = (cx.size_factor, cx.color);
@@ -805,7 +812,7 @@ impl Builder<'_> {
                 cx.color = self.c.muted;
                 let fs = self.s * cx.size_factor;
                 let item = ListItem { task: None, blocks: blocks.clone() };
-                let marker = format!("{label}.");
+                let marker = format!("{number}.");
                 let fmt = self.format(SpanStyle::default(), fs, cx.color, false, false);
                 let mut job = LayoutJob::single_section(marker.clone(), fmt);
                 job.wrap.max_width = f32::INFINITY;
@@ -874,28 +881,37 @@ impl Builder<'_> {
     ) {
         let s = self.s * cx.size_factor;
         self.begin(0.8 * s);
-        let size = 0.94 * s;
         let ncols = head.len().max(rows.iter().map(|r| r.len()).max().unwrap_or(0)).max(1);
-        let (padx, pady) = (0.7 * s, 0.4 * s);
         let empty: Vec<Inline> = Vec::new();
         fn cell<'a>(r: &'a [Vec<Inline>], c: usize, empty: &'a [Inline]) -> &'a [Inline] {
             r.get(c).map_or(empty, |v| &v[..])
         }
-        // Natural (unwrapped) column widths.
-        let mut natural = vec![0.0f32; ncols];
         let all_rows = std::iter::once((head, true)).chain(rows.iter().map(|r| (&r[..], false)));
-        for (r, is_head) in all_rows.clone() {
-            for (c, nat) in natural.iter_mut().enumerate() {
-                let (job, _) = self.inline_job(cell(r, c, &empty), size, cx.color, is_head, f32::INFINITY);
-                *nat = nat.max(self.galley(job).size().x + 2.0 * padx);
+        // A table with more columns than fit even at their narrowest is set in
+        // smaller type (down to half size), rather than running off the page.
+        let mut k = 1.0f32;
+        let (size, padx, pady, widths) = loop {
+            let (size, padx, pady) = (0.94 * s * k, 0.7 * s * k, 0.4 * s * k);
+            // Natural (unwrapped) column widths.
+            let mut natural = vec![0.0f32; ncols];
+            for (r, is_head) in all_rows.clone() {
+                for (c, nat) in natural.iter_mut().enumerate() {
+                    let (job, _) = self.inline_job(cell(r, c, &empty), size, cx.color, is_head, f32::INFINITY);
+                    *nat = nat.max(self.galley(job).size().x + 2.0 * padx);
+                }
             }
-        }
-        let total: f32 = natural.iter().sum();
-        let widths: Vec<f32> = if total <= w {
-            natural.clone()
-        } else {
-            let min = 3.0 * s;
-            natural.iter().map(|n| (n * w / total).max(min.min(*n))).collect()
+            let total: f32 = natural.iter().sum();
+            if total <= w {
+                break (size, padx, pady, natural);
+            }
+            let min = 3.0 * s * k;
+            let min_total: f32 = natural.iter().map(|n| min.min(*n)).sum();
+            if min_total > w && k > 0.5 {
+                k = (k * w / min_total).max(0.5);
+                continue;
+            }
+            let widths: Vec<f32> = natural.iter().map(|n| (n * w / total).max(min.min(*n))).collect();
+            break (size, padx, pady, widths);
         };
         let table_w: f32 = widths.iter().sum();
         let border = Stroke::new(1.0, self.c.rule);
@@ -969,7 +985,7 @@ impl Builder<'_> {
         };
         match source {
             ImageSource::Local(uri) => {
-                let poll = self.egui.try_load_texture(&uri, Default::default(), egui::SizeHint::default());
+                let poll = self.egui.try_load_texture(&uri, crate::view::IMAGE_TEXTURE, egui::SizeHint::default());
                 match poll {
                     Ok(egui::load::TexturePoll::Ready { texture }) => {
                         let mut size = texture.size * self.z;
@@ -1176,6 +1192,7 @@ pub(crate) mod tests {
             base_dir: None,
             pixels_per_point: 1.0,
             allow_remote: false,
+            fonts: 0,
         }
     }
 
