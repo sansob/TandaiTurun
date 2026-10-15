@@ -35,6 +35,11 @@ pub fn init_from_env() {
     }
 }
 
+/// Where the ✕ of the first document tab is (scenes only).
+pub fn first_close_button(ctx: &egui::Context) -> Option<egui::Pos2> {
+    ctx.data(|d| d.get_temp(egui::Id::new("scene_first_x")))
+}
+
 pub fn active() -> bool {
     SCENE.lock().map(|s| s.is_some()).unwrap_or(false)
 }
@@ -104,6 +109,54 @@ pub fn tick(app: &mut App, ctx: &egui::Context) {
         state.setup_done = true;
     }
     state.frames += 1;
+    if state.name == "menuhover" {
+        // Click "File", then point at "View": the open menu should follow the pointer.
+        let at = |x: f32| egui::pos2(x, 15.0);
+        let press = |pressed| egui::Event::PointerButton {
+            pos: at(20.0),
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        match state.frames {
+            5 => app.inject_keys.extend([egui::Event::PointerMoved(at(20.0)), press(true)]),
+            6 => app.inject_keys.push(press(false)),
+            12 => app.inject_keys.push(egui::Event::PointerMoved(at(60.0))),
+            16 => app.inject_keys.push(egui::Event::PointerMoved(at(92.0))),
+            _ => {}
+        }
+    }
+    if state.name == "tabs" {
+        // Right-click the first document tab: its menu shows the close commands.
+        let at = egui::pos2(150.0, 57.0);
+        let press = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        match state.frames {
+            5 => app.inject_keys.extend([egui::Event::PointerMoved(at), press(true)]),
+            6 => app.inject_keys.push(press(false)),
+            _ => {}
+        }
+    }
+    if state.name == "tabclose" && app.docs.len() > 1 {
+        // Click the ✕ of the first document tab.
+        if let Some(x) = crate::scene::first_close_button(ctx) {
+            let press = |pressed| egui::Event::PointerButton {
+                pos: x,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            };
+            match state.frames {
+                8 => app.inject_keys.extend([egui::Event::PointerMoved(x), press(true)]),
+                9 => app.inject_keys.push(press(false)),
+                _ => {}
+            }
+        }
+    }
     ctx.request_repaint();
     // Give layout, images and fonts a few frames to settle.
     let pending = app.doc().is_some_and(|d| d.active_view_ref().layout.as_ref().is_some_and(|l| l.pending_images));

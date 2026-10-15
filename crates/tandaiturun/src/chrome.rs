@@ -42,173 +42,201 @@ pub fn menu_bar(app: &mut App, ui: &mut egui::Ui) {
         ui,
         |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
+                let mut tops: Vec<egui::Response> = Vec::new();
                 let has_doc = app.doc().is_some();
                 let editing = app.doc().is_some_and(|d| d.editing);
-                ui.menu_button(tr("File"), |ui| {
-                    if item(ui, tr("New"), "Ctrl+N") {
-                        app.actions.push(Action::New);
-                    }
-                    if item(ui, tr("Open…"), "Ctrl+O") {
-                        app.actions.push(Action::Open);
-                    }
-                    ui.menu_button(tr("Open Recent"), |ui| {
-                        if app.settings.recent.is_empty() {
-                            ui.label(RichText::new(tr("No recent files")).weak());
+                tops.push(
+                    ui.menu_button(tr("File"), |ui| {
+                        if item(ui, tr("New"), "Ctrl+N") {
+                            app.actions.push(Action::New);
                         }
-                        for r in app.settings.recent.clone() {
-                            if ui.button(r.display().to_string()).clicked() {
-                                app.actions.push(Action::OpenPath(r));
-                                ui.close();
+                        if item(ui, tr("Open…"), "Ctrl+O") {
+                            app.actions.push(Action::Open);
+                        }
+                        ui.menu_button(tr("Open Recent"), |ui| {
+                            if app.settings.recent.is_empty() {
+                                ui.label(RichText::new(tr("No recent files")).weak());
                             }
-                        }
-                        if !app.settings.recent.is_empty() {
+                            for r in app.settings.recent.clone() {
+                                if ui.button(r.display().to_string()).clicked() {
+                                    app.actions.push(Action::OpenPath(r));
+                                    ui.close();
+                                }
+                            }
+                            if !app.settings.recent.is_empty() {
+                                ui.separator();
+                                if ui.button(tr("Clear Recent Files")).clicked() {
+                                    app.settings.recent.clear();
+                                    ui.close();
+                                }
+                            }
+                        });
+                        ui.separator();
+                        ui.add_enabled_ui(has_doc, |ui| {
+                            if item(ui, tr("Save"), "Ctrl+S") {
+                                app.actions.push(Action::Save);
+                            }
+                            if item(ui, tr("Save As…"), "Ctrl+Shift+S") {
+                                app.actions.push(Action::SaveAs);
+                            }
+                            if item(ui, tr("Reload from Disk"), "F5") {
+                                app.actions.push(Action::Reload);
+                            }
                             ui.separator();
-                            if ui.button(tr("Clear Recent Files")).clicked() {
-                                app.settings.recent.clear();
-                                ui.close();
+                            if item(ui, tr("Export to PDF…"), "") {
+                                app.actions.push(Action::ExportPdf);
                             }
-                        }
-                    });
-                    ui.separator();
-                    ui.add_enabled_ui(has_doc, |ui| {
-                        if item(ui, tr("Save"), "Ctrl+S") {
-                            app.actions.push(Action::Save);
-                        }
-                        if item(ui, tr("Save As…"), "Ctrl+Shift+S") {
-                            app.actions.push(Action::SaveAs);
-                        }
-                        if item(ui, tr("Reload from Disk"), "F5") {
-                            app.actions.push(Action::Reload);
-                        }
-                        ui.separator();
-                        if item(ui, tr("Export to PDF…"), "") {
-                            app.actions.push(Action::ExportPdf);
-                        }
-                        if item(ui, tr("Export to HTML…"), "") {
-                            app.actions.push(Action::ExportHtml);
-                        }
-                        if item(ui, tr("Print…"), "Ctrl+P") {
-                            app.actions.push(Action::Print);
-                        }
-                        ui.separator();
-                        if item(ui, tr("Document Properties…"), "Ctrl+D") {
-                            app.dialog = Some(Dialog::Properties);
-                        }
-                        ui.separator();
-                        if item(ui, tr("Close Tab"), "Ctrl+W") {
-                            if let Some(d) = app.doc() {
-                                app.actions.push(Action::Close(d.uid));
+                            if item(ui, tr("Export to HTML…"), "") {
+                                app.actions.push(Action::ExportHtml);
                             }
-                        }
-                        if item(ui, tr("Close All"), "") {
-                            app.actions.push(Action::CloseAll);
-                        }
-                    });
-                    ui.separator();
-                    if item(ui, tr("Exit"), "Ctrl+Q") {
-                        app.actions.push(Action::Quit);
-                    }
-                });
-                ui.menu_button(tr("Edit"), |ui| {
-                    ui.add_enabled_ui(editing, |ui| {
-                        if item(ui, tr("Undo"), "Ctrl+Z") {
-                            app.actions.push(Action::Undo);
-                        }
-                        if item(ui, tr("Redo"), "Ctrl+Shift+Z") {
-                            app.actions.push(Action::Redo);
-                        }
-                    });
-                    ui.separator();
-                    ui.add_enabled_ui(has_doc, |ui| {
-                        let label = if editing { tr("Stop Editing") } else { tr("Edit Markdown") };
-                        if item(ui, label, "Ctrl+E") {
-                            app.actions.push(Action::ToggleEdit);
-                        }
+                            if item(ui, tr("Print…"), "Ctrl+P") {
+                                app.actions.push(Action::Print);
+                            }
+                            ui.separator();
+                            if item(ui, tr("Document Properties…"), "Ctrl+D") {
+                                app.dialog = Some(Dialog::Properties);
+                            }
+                            ui.separator();
+                            if item(ui, tr("Close Tab"), "Ctrl+W") {
+                                if let Some(d) = app.doc() {
+                                    app.actions.push(Action::Close(d.uid));
+                                }
+                            }
+                            if item(ui, tr("Close All"), "") {
+                                app.actions.push(Action::CloseAll);
+                            }
+                        });
                         ui.separator();
-                        if item(ui, tr("Find…"), "Ctrl+F") {
-                            app.actions.push(Action::Find);
+                        if item(ui, tr("Exit"), "Ctrl+Q") {
+                            app.actions.push(Action::Quit);
                         }
-                        if item(ui, tr("Find Next"), "F3") {
-                            app.find_step(true);
-                        }
-                        if item(ui, tr("Find Previous"), "Shift+F3") {
-                            app.find_step(false);
-                        }
+                    })
+                    .response,
+                );
+                tops.push(
+                    ui.menu_button(tr("Edit"), |ui| {
                         ui.add_enabled_ui(editing, |ui| {
-                            if item(ui, tr("Replace…"), "") {
+                            if item(ui, tr("Undo"), "Ctrl+Z") {
+                                app.actions.push(Action::Undo);
+                            }
+                            if item(ui, tr("Redo"), "Ctrl+Shift+Z") {
+                                app.actions.push(Action::Redo);
+                            }
+                        });
+                        ui.separator();
+                        ui.add_enabled_ui(has_doc, |ui| {
+                            let label = if editing { tr("Stop Editing") } else { tr("Edit Markdown") };
+                            if item(ui, label, "Ctrl+E") {
+                                app.actions.push(Action::ToggleEdit);
+                            }
+                            ui.separator();
+                            if item(ui, tr("Find…"), "Ctrl+F") {
                                 app.actions.push(Action::Find);
-                                app.show_replace = true;
                             }
+                            if item(ui, tr("Find Next"), "F3") {
+                                app.find_step(true);
+                            }
+                            if item(ui, tr("Find Previous"), "Shift+F3") {
+                                app.find_step(false);
+                            }
+                            ui.add_enabled_ui(editing, |ui| {
+                                if item(ui, tr("Replace…"), "") {
+                                    app.actions.push(Action::Find);
+                                    app.show_replace = true;
+                                }
+                            });
                         });
-                    });
-                    ui.separator();
-                    if item(ui, tr("Preferences…"), "Ctrl+,") {
-                        app.dialog = Some(Dialog::Preferences);
-                    }
-                });
-                ui.menu_button(tr("View"), |ui| view_menu(app, ui));
-                ui.menu_button(tr("Window"), |ui| {
-                    if check(ui, app.settings.show_nav, tr("Navigation Pane"), "F4") {
-                        app.settings.show_nav = !app.settings.show_nav;
-                    }
-                    if check(ui, app.settings.show_tools, tr("Tools Pane"), "Shift+F4") {
-                        app.settings.show_tools = !app.settings.show_tools;
-                    }
-                    if check(ui, app.fullscreen, tr("Full Screen"), "F11") {
-                        app.fullscreen = !app.fullscreen;
-                    }
-                    ui.separator();
-                    if check(ui, app.active.is_none(), tr("Home"), "") {
-                        app.active = None;
-                    }
-                    for i in 0..app.docs.len() {
-                        let name = app.docs[i].name();
-                        if check(ui, app.active == Some(i), &name, "") {
-                            app.active = Some(i);
+                        ui.separator();
+                        if item(ui, tr("Preferences…"), "Ctrl+,") {
+                            app.dialog = Some(Dialog::Preferences);
                         }
-                    }
-                });
-                ui.menu_button(tr("Help"), |ui| {
-                    if item(ui, tr("Welcome Guide"), "") {
-                        let text =
-                            if i18n::current() == Lang::Id { crate::app::WELCOME_ID } else { crate::app::WELCOME_EN };
-                        app.actions.push(Action::OpenText { title: tr("Welcome").to_string(), text: text.to_string() });
-                    }
-                    if item(ui, tr("Markdown Cheat Sheet"), "") {
-                        app.actions.push(Action::OpenText {
-                            title: tr("Markdown Cheat Sheet").to_string(),
-                            text: crate::app::CHEATSHEET.to_string(),
-                        });
-                    }
-                    if item(ui, tr("Keyboard Shortcuts"), "") {
-                        app.dialog = Some(Dialog::Shortcuts);
-                    }
-                    ui.separator();
-                    ui.menu_button(tr("Language"), |ui| {
-                        for l in Lang::ALL {
-                            if check(ui, i18n::current() == l, l.name(), "") {
-                                app.settings.lang = Some(l);
+                    })
+                    .response,
+                );
+                tops.push(ui.menu_button(tr("View"), |ui| view_menu(app, ui)).response);
+                tops.push(
+                    ui.menu_button(tr("Window"), |ui| {
+                        if check(ui, app.settings.show_nav, tr("Navigation Pane"), "F4") {
+                            app.settings.show_nav = !app.settings.show_nav;
+                        }
+                        if check(ui, app.settings.show_tools, tr("Tools Pane"), "Shift+F4") {
+                            app.settings.show_tools = !app.settings.show_tools;
+                        }
+                        if check(ui, app.fullscreen, tr("Full Screen"), "F11") {
+                            app.fullscreen = !app.fullscreen;
+                        }
+                        ui.separator();
+                        if check(ui, app.active.is_none(), tr("Home"), "") {
+                            app.active = None;
+                        }
+                        for i in 0..app.docs.len() {
+                            let name = app.docs[i].name();
+                            if check(ui, app.active == Some(i), &name, "") {
+                                app.active = Some(i);
                             }
                         }
-                    });
-                    ui.separator();
-                    if item(ui, tr("Source Code on GitHub"), "") {
-                        let _ = webbrowser::open("https://github.com/sansob/TandaiTurun");
+                    })
+                    .response,
+                );
+                tops.push(
+                    ui.menu_button(tr("Help"), |ui| {
+                        if item(ui, tr("Welcome Guide"), "") {
+                            let text = if i18n::current() == Lang::Id {
+                                crate::app::WELCOME_ID
+                            } else {
+                                crate::app::WELCOME_EN
+                            };
+                            app.actions
+                                .push(Action::OpenText { title: tr("Welcome").to_string(), text: text.to_string() });
+                        }
+                        if item(ui, tr("Markdown Cheat Sheet"), "") {
+                            app.actions.push(Action::OpenText {
+                                title: tr("Markdown Cheat Sheet").to_string(),
+                                text: crate::app::CHEATSHEET.to_string(),
+                            });
+                        }
+                        if item(ui, tr("Keyboard Shortcuts"), "") {
+                            app.dialog = Some(Dialog::Shortcuts);
+                        }
+                        ui.separator();
+                        ui.menu_button(tr("Language"), |ui| {
+                            for l in Lang::ALL {
+                                if check(ui, i18n::current() == l, l.name(), "") {
+                                    app.settings.lang = Some(l);
+                                }
+                            }
+                        });
+                        ui.separator();
+                        if item(ui, tr("Source Code on GitHub"), "") {
+                            let _ = webbrowser::open("https://github.com/sansob/TandaiTurun");
+                        }
+                        if item(ui, tr("Report a Problem"), "") {
+                            let _ = webbrowser::open("https://github.com/sansob/TandaiTurun/issues");
+                        }
+                        if item(ui, tr("Make Default Markdown App"), "") {
+                            app.actions.push(Action::MakeDefault);
+                        }
+                        if item(ui, tr("Open-Source Libraries"), "") {
+                            app.dialog =
+                                Some(Dialog::About { tab: crate::app::AboutTab::Libraries, filter: String::new() });
+                        }
+                        if item(ui, tr("About TandaiTurun"), "") {
+                            app.dialog =
+                                Some(Dialog::About { tab: crate::app::AboutTab::About, filter: String::new() });
+                        }
+                    })
+                    .response,
+                );
+                // Like native menu bars: while one menu is open, pointing at
+                // another title opens that one instead.
+                let ids: Vec<egui::Id> = tops.iter().map(egui::Popup::default_response_id).collect();
+                if ids.iter().any(|id| egui::Popup::is_id_open(ui.ctx(), *id)) {
+                    if let Some(k) = tops.iter().position(|r| r.contains_pointer()) {
+                        if !egui::Popup::is_id_open(ui.ctx(), ids[k]) {
+                            egui::Popup::open_id(ui.ctx(), ids[k]);
+                        }
                     }
-                    if item(ui, tr("Report a Problem"), "") {
-                        let _ = webbrowser::open("https://github.com/sansob/TandaiTurun/issues");
-                    }
-                    if item(ui, tr("Make Default Markdown App"), "") {
-                        app.actions.push(Action::MakeDefault);
-                    }
-                    if item(ui, tr("Open-Source Libraries"), "") {
-                        app.dialog =
-                            Some(Dialog::About { tab: crate::app::AboutTab::Libraries, filter: String::new() });
-                    }
-                    if item(ui, tr("About TandaiTurun"), "") {
-                        app.dialog = Some(Dialog::About { tab: crate::app::AboutTab::About, filter: String::new() });
-                    }
-                });
+                }
             });
         },
     );
@@ -335,10 +363,15 @@ pub fn tab_strip(app: &mut App, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
-                let tab = |ui: &mut egui::Ui, label: &str, active: bool, closable: bool| -> (bool, bool) {
+                if crate::scene::active() {
+                    ui.ctx().data_mut(|d| d.remove_temp::<egui::Pos2>(egui::Id::new("scene_first_x")));
+                }
+                // One tab: its response (click, middle click, right click) and
+                // whether its ✕ was clicked. The ✕ is checked by position because
+                // the whole tab's click area sits on top of it.
+                let tab = |ui: &mut egui::Ui, label: &str, active: bool, closable: bool| -> (egui::Response, bool) {
                     let fill = if active { p.chrome } else { Color32::TRANSPARENT };
-                    let mut close = false;
-                    let r = egui::Frame::new()
+                    let inner = egui::Frame::new()
                         .fill(fill)
                         .corner_radius(egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 })
                         .inner_margin(Margin { left: 12, right: if closable { 6 } else { 12 }, top: 6, bottom: 6 })
@@ -347,41 +380,95 @@ pub fn tab_strip(app: &mut App, ui: &mut egui::Ui) {
                                 ui.spacing_mut().item_spacing.x = 6.0;
                                 let text = RichText::new(label).color(if active { p.text } else { p.muted });
                                 ui.add(egui::Label::new(text).selectable(false).truncate());
-                                if closable {
-                                    let x =
-                                        ui.add(egui::Button::new(RichText::new("✕").size(11.0)).frame(false).small());
-                                    if x.clicked() {
-                                        close = true;
-                                    }
+                                closable.then(|| {
+                                    let (rect, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
+                                    rect
+                                })
+                            })
+                            .inner
+                        });
+                    let r = inner.response.interact(Sense::click());
+                    let x_rect = inner.inner;
+                    let mut x_clicked = false;
+                    if let Some(x) = x_rect {
+                        if crate::scene::active() {
+                            ui.ctx().data_mut(|d| {
+                                if d.get_temp::<egui::Pos2>(egui::Id::new("scene_first_x")).is_none() {
+                                    d.insert_temp(egui::Id::new("scene_first_x"), x.center());
                                 }
                             });
-                        })
-                        .response
-                        .interact(Sense::click());
-                    if active {
-                        let r = r.rect;
-                        ui.painter().line_segment([r.left_top(), r.right_top()], Stroke::new(2.0, BRAND));
+                        }
+                        let hovered = ui.rect_contains_pointer(x);
+                        if hovered {
+                            ui.painter().rect_filled(x, 3.0, p.hover);
+                        }
+                        let color = if hovered || active { p.text } else { p.muted };
+                        ui.painter().text(
+                            x.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "✕",
+                            egui::FontId::proportional(11.0),
+                            color,
+                        );
+                        x_clicked = r.clicked() && r.interact_pointer_pos().is_some_and(|pos| x.contains(pos));
                     }
-                    (r.clicked(), close || r.middle_clicked())
+                    if active {
+                        let rr = r.rect;
+                        ui.painter().line_segment([rr.left_top(), rr.right_top()], Stroke::new(2.0, BRAND));
+                    }
+                    (r, x_clicked)
                 };
-                if tab(ui, &format!("🏠 {}", tr("Home")), app.active.is_none(), false).0 {
+                if tab(ui, &format!("🏠 {}", tr("Home")), app.active.is_none(), false).0.clicked() {
                     app.active = None;
                 }
-                let mut close = None;
+                let mut actions = Vec::new();
                 for i in 0..app.docs.len() {
                     let d = &app.docs[i];
                     let label = format!("{}{}", if d.dirty() { "● " } else { "" }, d.name());
-                    let (clicked, closed) = tab(ui, &label, app.active == Some(i), true);
-                    if clicked {
+                    let (r, x_clicked) = tab(ui, &label, app.active == Some(i), true);
+                    let r = match &d.path {
+                        Some(path) => r.on_hover_text(path.display().to_string()),
+                        None => r,
+                    };
+                    if x_clicked || r.middle_clicked() {
+                        actions.push(Action::Close(d.uid));
+                    } else if r.clicked() {
                         app.active = Some(i);
                     }
-                    if closed {
-                        close = Some(d.uid);
-                    }
+                    let (uid, path) = (d.uid, d.path.clone());
+                    r.context_menu(|ui| {
+                        if ui.button(tr("Close")).clicked() {
+                            actions.push(Action::Close(uid));
+                            ui.close();
+                        }
+                        if ui.button(tr("Close Others")).clicked() {
+                            actions.push(Action::CloseOthers(uid));
+                            ui.close();
+                        }
+                        if ui.button(tr("Close Tabs to the Right")).clicked() {
+                            actions.push(Action::CloseRight(uid));
+                            ui.close();
+                        }
+                        if ui.button(tr("Close All")).clicked() {
+                            actions.push(Action::CloseAll);
+                            ui.close();
+                        }
+                        if let Some(path) = &path {
+                            ui.separator();
+                            if ui.button(tr("Copy Path")).clicked() {
+                                ui.ctx().copy_text(path.display().to_string());
+                                ui.close();
+                            }
+                            if ui.button(tr("Show in Folder")).clicked() {
+                                if let Some(dir) = path.parent() {
+                                    let _ = open::that_detached(dir);
+                                }
+                                ui.close();
+                            }
+                        }
+                    });
                 }
-                if let Some(uid) = close {
-                    app.actions.push(Action::Close(uid));
-                }
+                app.actions.extend(actions);
                 if ui
                     .add(egui::Button::new(RichText::new("+").size(16.0)).frame(false))
                     .on_hover_text(tr("New"))

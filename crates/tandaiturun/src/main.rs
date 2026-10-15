@@ -129,7 +129,7 @@ fn headless_pdf(text: &str, path: &std::path::Path, allow_remote: bool) -> Vec<u
         theme: theme::PageTheme::Paper,
         allow_remote,
     };
-    let base = std::fs::canonicalize(path).ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    let base = tandaiturun_core::document::canonical(path).parent().map(|d| d.to_path_buf());
     let title = tandaiturun_core::document::title(text, Some(path));
     let mut out = Vec::new();
     // Images load in the background: lay out again until they are all there.
