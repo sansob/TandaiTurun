@@ -239,6 +239,9 @@ fn preferences(app: &mut App, ui: &mut egui::Ui) -> bool {
         ui.label(tr("Files"));
         ui.checkbox(&mut s.auto_reload, tr("Reload documents changed by other programs"));
         ui.end_row();
+        ui.label(tr("Internet images"));
+        ui.checkbox(&mut s.remote_images, tr("Show images from the internet without asking"));
+        ui.end_row();
         ui.label(tr("Default app"));
         if ui.button(tr("Make TandaiTurun the default app for .md files")).clicked() {
             make_default = true;
@@ -305,6 +308,7 @@ const FONTS: &[(&str, &str, &str)] = &[
     ("Noto Emoji", "Icons", "https://github.com/googlefonts/noto-emoji"),
     ("Noto Sans Symbols 2", "Symbols", "https://github.com/notofonts/symbols"),
     ("Noto Sans Math (arrows)", "Arrows", "https://github.com/notofonts/math"),
+    ("STIX Two Math", "Formulas", "https://github.com/stipub/stixfonts"),
 ];
 
 fn about(app: &App, ui: &mut egui::Ui, tab: &mut AboutTab, filter: &mut String) -> bool {
@@ -341,7 +345,7 @@ fn about(app: &App, ui: &mut egui::Ui, tab: &mut AboutTab, filter: &mut String) 
                 );
                 ui.add_space(4.0);
                 let n = credits().count().to_string();
-                let thanks = trf("Built with {n} open-source libraries and 6 open fonts. Thank you!", &[("n", &n)]);
+                let thanks = trf("Built with {n} open-source libraries and 7 open fonts. Thank you!", &[("n", &n)]);
                 ui.label(RichText::new(thanks).size(12.5));
             });
         }

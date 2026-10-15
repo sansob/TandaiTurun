@@ -30,7 +30,16 @@ pub struct Span {
 pub enum Inline {
     Span(Span),
     Break,
-    Image { url: String, alt: String, link: Option<String> },
+    Image {
+        url: String,
+        alt: String,
+        link: Option<String>,
+    },
+    /// LaTeX math: `$…$` (inline) or `$$…$$` (display).
+    Math {
+        tex: String,
+        display: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -331,9 +340,11 @@ pub fn parse(markdown: &str) -> Vec<TopBlock> {
                 let f = stack.last_mut().expect("frame");
                 f.inlines.push(span(&t, SpanStyle { code: true, ..style }, &links));
             }
-            Event::InlineMath(t) | Event::DisplayMath(t) => {
-                let f = stack.last_mut().expect("frame");
-                f.inlines.push(span(&t, SpanStyle { italic: true, ..style }, &links));
+            Event::InlineMath(t) => {
+                stack.last_mut().expect("frame").inlines.push(Inline::Math { tex: t.to_string(), display: false });
+            }
+            Event::DisplayMath(t) => {
+                stack.last_mut().expect("frame").inlines.push(Inline::Math { tex: t.to_string(), display: true });
             }
             Event::SoftBreak => {
                 let f = stack.last_mut().expect("frame");
@@ -427,7 +438,9 @@ fn split_images(inlines: Vec<Inline>) -> Vec<Block> {
     for i in inlines {
         match i {
             Inline::Image { .. } => {
-                if cur.iter().any(|c: &Inline| matches!(c, Inline::Span(s) if !s.text.trim().is_empty())) {
+                if cur.iter().any(|c: &Inline| {
+                    matches!(c, Inline::Span(s) if !s.text.trim().is_empty()) || matches!(c, Inline::Math { .. })
+                }) {
                     out.push(Block::Paragraph(std::mem::take(&mut cur)));
                 } else {
                     cur.clear();
@@ -437,7 +450,9 @@ fn split_images(inlines: Vec<Inline>) -> Vec<Block> {
             other => cur.push(other),
         }
     }
-    if cur.iter().any(|c| matches!(c, Inline::Span(s) if !s.text.trim().is_empty()) || matches!(c, Inline::Break)) {
+    if cur.iter().any(|c| {
+        matches!(c, Inline::Span(s) if !s.text.trim().is_empty()) || matches!(c, Inline::Break | Inline::Math { .. })
+    }) {
         out.push(Block::Paragraph(cur));
     }
     out
@@ -471,6 +486,7 @@ pub fn inline_text(inlines: &[Inline]) -> String {
             Inline::Span(s) => s.text.as_str(),
             Inline::Break => " ",
             Inline::Image { alt, .. } => alt.as_str(),
+            Inline::Math { tex, .. } => tex.as_str(),
         })
         .collect()
 }
@@ -522,6 +538,19 @@ mod tests {
             matches!(&b[4], Block::Paragraph(i) if matches!(&i[0], Inline::Image { url, alt, .. } if url == "logo.png" && alt == "Logo"))
         );
         assert_eq!(b[5], Block::Rule);
+    }
+
+    #[test]
+    fn math() {
+        let b = blocks("Euler: $e^{i\\pi} + 1 = 0$.\n\n$$\\int_0^1 x\\,dx$$\n");
+        let Block::Paragraph(i) = &b[0] else { panic!("{b:#?}") };
+        assert!(i.iter().any(|x| matches!(x, Inline::Math { display: false, tex } if tex == "e^{i\\pi} + 1 = 0")));
+        let Block::Paragraph(d) = &b[1] else { panic!("{b:#?}") };
+        assert!(matches!(&d[..], [Inline::Math { display: true, .. }]));
+        // A lone dollar amount is not math.
+        let b = blocks("It costs $5.\n");
+        let Block::Paragraph(i) = &b[0] else { panic!() };
+        assert!(!i.iter().any(|x| matches!(x, Inline::Math { .. })));
     }
 
     #[test]

@@ -78,6 +78,14 @@ sequenceDiagram
     T-->>R: notes.pdf
 ```
 
+## Math
+
+Inline $E = mc^2$ and $\sqrt{a^2 + b^2}$, or on its own line:
+
+$$
+\int_{-\infty}^{\infty} e^{-x^2} \, dx = \sqrt{\pi}
+$$
+
 ## Tables
 
 | Left | Center | Right |

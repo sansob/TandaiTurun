@@ -83,6 +83,11 @@ fn setup(app: &mut App, name: &str) {
         "properties" => app.dialog = Some(crate::app::Dialog::Properties),
         "preferences" => app.dialog = Some(crate::app::Dialog::Preferences),
         "readmode" => app.read_mode = true,
+        "remote" => {
+            if let Some(d) = app.doc_mut() {
+                d.allow_remote = true;
+            }
+        }
         "libraries" => {
             app.dialog = Some(crate::app::Dialog::About { tab: crate::app::AboutTab::Libraries, filter: String::new() })
         }

@@ -194,8 +194,18 @@ struct ImageRes {
     id: Ref,
 }
 
-fn load_image(uri: &str) -> Option<image::RgbaImage> {
-    if let Some(png) = crate::mermaid::png_for(uri) {
+/// Bytes of an internet image the app already downloaded.
+pub type Fetch<'a> = &'a dyn Fn(&str) -> Option<Vec<u8>>;
+
+fn load_image(uri: &str, fetch: Fetch<'_>) -> Option<image::RgbaImage> {
+    if uri.starts_with("http://") || uri.starts_with("https://") {
+        let bytes = crate::remote::bytes(uri).map(|b| b.to_vec()).or_else(|| fetch(uri))?;
+        if bytes.trim_ascii_start().starts_with(b"<") {
+            return crate::mermaid::rasterize_svg(&bytes, 3.0);
+        }
+        return image::load_from_memory(&bytes).ok().map(|i| i.into_rgba8());
+    }
+    if let Some(png) = crate::mermaid::png_for(uri).or_else(|| crate::math::png_for(uri)) {
         return image::load_from_memory(&png).ok().map(|i| i.into_rgba8());
     }
     let path = uri.strip_prefix("file://")?;
@@ -217,12 +227,17 @@ pub fn export(ctx: &egui::Context, markdown: &str, look: &Look, base_dir: Option
         zoom: 1.0,
         base_dir: base_dir.clone(),
         pixels_per_point: ctx.pixels_per_point(),
+        allow_remote: look.allow_remote,
     };
     let l = layout::layout(ctx, markdown, &params);
-    render(&l, markdown, title)
+    let fetch = |uri: &str| match ctx.try_load_bytes(uri) {
+        Ok(egui::load::BytesPoll::Ready { bytes, .. }) => Some(bytes.to_vec()),
+        _ => None,
+    };
+    render(&l, markdown, title, &fetch)
 }
 
-pub fn render(l: &Layout, markdown: &str, title: &str) -> Vec<u8> {
+pub fn render(l: &Layout, markdown: &str, title: &str, fetch: Fetch<'_>) -> Vec<u8> {
     let colors = l.params.theme.colors();
     let paper = colors.paper;
     let (pw, ph) = l.params.page.pdf_points();
@@ -316,7 +331,7 @@ pub fn render(l: &Layout, markdown: &str, title: &str) -> Vec<u8> {
                 }
                 Prim::Image { rect, uri, link } => {
                     if !images.contains_key(uri) {
-                        if let Some(img) = load_image(uri) {
+                        if let Some(img) = load_image(uri, fetch) {
                             let id = ids.next();
                             images.insert(uri.clone(), ImageRes { name: format!("Im{}", images.len() + 1), id });
                             image_data.push((id, img));
@@ -584,7 +599,7 @@ mod tests {
         let md = "# Title\n\nHello **PDF** with [a link](https://example.com) and `code`.\n\n## Second\n\nÜmlaut, emoji ✔.\n";
         crate::layout::tests::with_ctx(|ctx| {
             let l = crate::layout::layout(ctx, md, &crate::layout::tests::params(1.0));
-            let bytes = render(&l, md, "Title");
+            let bytes = render(&l, md, "Title", &|_| None);
             let s = String::from_utf8_lossy(&bytes);
             assert!(bytes.starts_with(b"%PDF-"));
             assert!(s.contains("/FontFile2"));

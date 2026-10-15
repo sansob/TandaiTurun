@@ -212,7 +212,7 @@ pub const ENTRIES: &[(&str, &str)] = &[
     ("Make TandaiTurun the default app for .md files", "Jadikan TandaiTurun aplikasi bawaan untuk file .md"),
     ("TandaiTurun now opens your Markdown files", "Sekarang file Markdown-mu dibuka dengan TandaiTurun"),
     ("Pick TandaiTurun for .md files in the settings that just opened", "Pilih TandaiTurun untuk file .md di pengaturan yang baru terbuka"),
-    ("Built with {n} open-source libraries and 6 open fonts. Thank you!", "Dibangun dengan {n} pustaka open source dan 6 huruf terbuka. Terima kasih!"),
+    ("Built with {n} open-source libraries and 7 open fonts. Thank you!", "Dibangun dengan {n} pustaka open source dan 7 huruf terbuka. Terima kasih!"),
     ("TandaiTurun is built on these open-source Rust libraries. Click a name to visit the project.", "TandaiTurun dibangun di atas pustaka Rust open source berikut. Klik nama untuk membuka proyeknya."),
     ("All bundled fonts are under the SIL Open Font License 1.1. The licence texts are installed with the app.", "Semua huruf yang disertakan berlisensi SIL Open Font License 1.1. Teks lisensinya ikut terpasang bersama aplikasi."),
     ("Document and interface text", "Teks dokumen dan antarmuka"),
@@ -224,6 +224,13 @@ pub const ENTRIES: &[(&str, &str)] = &[
     ("Export to PDF", "Ekspor ke PDF"),
     ("Export to HTML", "Ekspor ke HTML"),
     ("Print", "Cetak"),
+    ("Formulas", "Rumus"),
+    ("Click to show internet images", "Klik untuk menampilkan gambar internet"),
+    ("This document has {n} images from the internet. Showing them lets those websites see that you opened it.", "Dokumen ini berisi {n} gambar dari internet. Menampilkannya membuat situs-situs itu tahu bahwa kamu membuka dokumen ini."),
+    ("Show images", "Tampilkan gambar"),
+    ("Always show images", "Selalu tampilkan gambar"),
+    ("Internet images", "Gambar internet"),
+    ("Show images from the internet without asking", "Tampilkan gambar dari internet tanpa bertanya"),
 ];
 
 /// Text that is the same in both languages.

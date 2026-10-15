@@ -20,6 +20,7 @@ pratinjau langsung di sebelahnya.
 - [x] Cari teks dengan `Ctrl+F`; semua hasil tampil per halaman di panel Cari
 - [x] Pilih dan salin teks langsung dari halaman
 - [x] Gambar diagram dari blok kode `mermaid`, tanpa browser
+- [x] Susun rumus matematika: $e^{i\pi} + 1 = 0$
 - [x] Edit dengan toolbar format, halaman ikut berubah selagi mengetik
 - [x] Ekspor ke **PDF** (teks asli, tautan bisa diklik, bookmark) atau **HTML**
 - [x] Cetak lewat penampil PDF bawaan sistem
@@ -58,9 +59,9 @@ Butuh halaman baru di PDF? Tulis `<!-- pagebreak -->` di barisnya sendiri.
 
 ## File-mu tetap milikmu
 
-TandaiTurun tidak pernah mengunggah apa pun. Gambar dari internet juga tidak
-dimuat, jadi dokumen tidak bisa memberi tahu siapa pun bahwa kamu membukanya;
-gambar yang disimpan di sebelah file-mu tampil seperti biasa.
+TandaiTurun tidak pernah mengunggah apa pun. Gambar dari internet baru dimuat
+kalau kamu izinkan, jadi dokumen tidak bisa memberi tahu siapa pun bahwa kamu
+membukanya; gambar yang disimpan di sebelah file-mu tampil seperti biasa.
 
 ---
 

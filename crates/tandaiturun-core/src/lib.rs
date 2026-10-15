@@ -27,6 +27,7 @@ pub fn parser_options() -> Options {
         | Options::ENABLE_HEADING_ATTRIBUTES
         | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS
         | Options::ENABLE_GFM
+        | Options::ENABLE_MATH
 }
 
 /// The HTML comment that starts a new page in the reader and in print.

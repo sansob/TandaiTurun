@@ -14,8 +14,10 @@ a week. Fixes are released as soon as possible and credited unless you prefer ot
 ## Scope notes
 
 - TandaiTurun opens files you choose and makes no network requests of its own.
-  Remote images in a document are **not** loaded, so opening a file can't be
-  tracked by its author.
+  Internet images in a document are only downloaded after the reader allows
+  it (per document, or always in Preferences). Downloads use the system's
+  certificate store and proxy settings, are limited to 20 MB and are only
+  decoded as images.
 - Links are only opened when you click them: web links in your browser,
   links to other Markdown files in a new tab, other files with the program
   your system uses for them.

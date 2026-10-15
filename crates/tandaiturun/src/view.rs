@@ -64,6 +64,8 @@ pub struct Look {
     pub font: DocFont,
     pub font_size: f32,
     pub theme: PageTheme,
+    /// Load images from the internet.
+    pub allow_remote: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,6 +119,8 @@ pub enum ViewEvent {
     Link(String),
     /// "Edit here": switch to the editor at this source offset.
     EditAt(usize),
+    /// The reader clicked an internet image placeholder: load them.
+    AllowRemote,
 }
 
 enum ScrollTarget {
@@ -301,6 +305,7 @@ impl DocView {
             zoom: self.effective_zoom(look),
             base_dir,
             pixels_per_point: ctx.pixels_per_point(),
+            allow_remote: look.allow_remote,
         };
         let stale = self.key.as_ref() != Some(&(rev, params.clone()));
         let images_ready =
@@ -530,7 +535,13 @@ impl DocView {
                 })
             };
             let hover_link = resp.hover_pos().and_then(to_page).and_then(|(p, f)| l.link_at(p, f).map(str::to_owned));
-            if let Some(url) = &hover_link {
+            let hover_remote = resp.hover_pos().and_then(to_page).is_some_and(|(p, f)| l.remote_placeholder_at(p, f));
+            if hover_remote {
+                ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+                if resp.clicked() {
+                    events.push(ViewEvent::AllowRemote);
+                }
+            } else if let Some(url) = &hover_link {
                 ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                 resp.clone().on_hover_text_at_pointer(url.as_str());
             } else if self.tool == Tool::Hand {
@@ -815,10 +826,11 @@ pub fn paint_page(
         match &l.prims[i] {
             Prim::Text(t) => painter.galley(t.pos + off, t.galley.clone(), c.text),
             Prim::Image { rect, uri, .. } => paint_image(ui.ctx(), &painter, uri, rect.translate(off)),
-            Prim::Placeholder { rect, label } => {
+            Prim::Placeholder { rect, label, remote } => {
                 let r = rect.translate(off);
                 painter.rect_filled(r, 4.0, c.code_bg);
-                painter.rect_stroke(r, 4.0, Stroke::new(1.0, c.code_border), StrokeKind::Inside);
+                let border = if *remote { Stroke::new(1.0, c.link) } else { Stroke::new(1.0, c.code_border) };
+                painter.rect_stroke(r, 4.0, border, StrokeKind::Inside);
                 let font = egui::FontId::proportional((13.0 * l.params.zoom).max(6.0));
                 let g = painter.layout(label.clone(), font, c.muted, r.width() - 16.0);
                 painter.with_clip_rect(r.intersect(painter.clip_rect())).galley(

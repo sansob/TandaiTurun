@@ -12,9 +12,11 @@ mod i18n;
 mod i18n_id;
 mod layout;
 mod markdown;
+mod math;
 mod mermaid;
 mod panes;
 mod pdf;
+mod remote;
 mod scene;
 mod theme;
 mod view;
@@ -31,7 +33,8 @@ const HELP: &str = "TandaiTurun - read and edit Markdown like a PDF
 
 Usage:
   tandaiturun [FILE.md ...]               open documents
-  tandaiturun --export-pdf IN.md [OUT]    convert to PDF (A4, same layout as the app)
+  tandaiturun --export-pdf IN.md [OUT]    convert to PDF (A4, same layout as the app);
+                                          add --allow-remote-images to include internet images
   tandaiturun --export-html IN.md [OUT]   convert to a standalone HTML file
   tandaiturun --version | --help
 ";
@@ -49,6 +52,8 @@ fn run_cli(args: &[String]) -> Option<i32> {
             Some(0)
         }
         Some("--export-pdf") => {
+            let allow_remote = args.iter().any(|a| a == "--allow-remote-images");
+            let args: Vec<String> = args.iter().filter(|a| *a != "--allow-remote-images").cloned().collect();
             let Some(input) = args.get(1) else {
                 eprint!("{HELP}");
                 return Some(2);
@@ -62,7 +67,7 @@ fn run_cli(args: &[String]) -> Option<i32> {
                     return Some(1);
                 }
             };
-            let bytes = headless_pdf(&f.text, &input);
+            let bytes = headless_pdf(&f.text, &input, allow_remote);
             match tandaiturun_core::document::write_atomic(&out, &bytes) {
                 Ok(()) => {
                     println!("{}", out.display());
@@ -113,7 +118,7 @@ fn run_cli(args: &[String]) -> Option<i32> {
 }
 
 /// Lays a document out without a window and renders it to PDF.
-fn headless_pdf(text: &str, path: &std::path::Path) -> Vec<u8> {
+fn headless_pdf(text: &str, path: &std::path::Path, allow_remote: bool) -> Vec<u8> {
     let ctx = egui::Context::default();
     egui_extras::install_image_loaders(&ctx);
     ctx.set_fonts(fonts::definitions());
@@ -122,6 +127,7 @@ fn headless_pdf(text: &str, path: &std::path::Path) -> Vec<u8> {
         font: layout::DocFont::Sans,
         font_size: app::Settings::default().font_size,
         theme: theme::PageTheme::Paper,
+        allow_remote,
     };
     let base = std::fs::canonicalize(path).ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
     let title = tandaiturun_core::document::title(text, Some(path));
@@ -139,11 +145,17 @@ fn headless_pdf(text: &str, path: &std::path::Path) -> Vec<u8> {
                 zoom: 1.0,
                 base_dir: base.clone(),
                 pixels_per_point: ui.ctx().pixels_per_point(),
+                allow_remote,
             };
             let l = layout::layout(ui.ctx(), text, &params);
             pending = l.pending_images;
-            if !pending || started.elapsed() > std::time::Duration::from_secs(10) {
-                out = pdf::render(&l, text, &title);
+            if !pending || started.elapsed() > std::time::Duration::from_secs(30) {
+                let ctx = ui.ctx().clone();
+                let fetch = move |uri: &str| match ctx.try_load_bytes(uri) {
+                    Ok(egui::load::BytesPoll::Ready { bytes, .. }) => Some(bytes.to_vec()),
+                    _ => None,
+                };
+                out = pdf::render(&l, text, &title, &fetch);
             }
         });
         output.textures_delta.clear();

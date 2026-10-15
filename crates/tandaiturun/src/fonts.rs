@@ -94,7 +94,9 @@ mod tests {
     #[test]
     fn every_bundled_font_has_its_licence() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fonts");
-        for lic in ["inter", "liberation", "jetbrainsmono", "notoemoji", "notosanssymbols2", "notosansmath"] {
+        for lic in
+            ["inter", "liberation", "stixtwomath", "jetbrainsmono", "notoemoji", "notosanssymbols2", "notosansmath"]
+        {
             let text = std::fs::read_to_string(dir.join(format!("OFL-{lic}.txt"))).unwrap();
             assert!(text.contains("SIL Open Font License"), "{lic}");
         }

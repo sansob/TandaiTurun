@@ -64,8 +64,14 @@ Namanya terjemahan harfiah: *tandai* = "mark", *turun* = "down". Mark down.
 - **Diagram Mermaid** dari blok ```` ```mermaid ````: flowchart, sequence,
   class, state, ER, pie, Gantt, timeline, mindmap dan lainnya, digambar native
   dengan [mermaid-rs-renderer](https://github.com/1jehuang/mermaid-rs-renderer), tanpa browser.
+- **Matematika**: rumus `$…$` sebaris dan `$$…$$` tersendiri, disusun dengan
+  aturan TeX oleh [latex-rust](https://github.com/jscarr64/LaTeX-Rust) (pecahan,
+  akar, sigma, integral, matriks, huruf Yunani…). Rumus sebaris duduk di garis dasar teks.
 - Gambar di sebelah dokumen (PNG, JPEG, GIF, WebP, BMP, SVG), dan HTML sederhana
   seperti `<img>`, `<br>`, `<mark>`, `<sub>`, `<sup>`.
+- **Gambar dari internet** baru dimuat kalau kamu izinkan: bar di atas halaman
+  menawarkan **Tampilkan gambar** (dokumen ini) atau **Selalu tampilkan gambar**,
+  dan tiap kotak gambar bisa diklik. Pengaturan yang sama ada di Preferensi.
 - Front matter YAML disembunyikan dari halaman dan tampil di Properti Dokumen.
 
 **Mengedit**
@@ -144,6 +150,7 @@ development: `sudo apt install libxkbcommon-dev libwayland-dev libxcb-render0-de
 ```sh
 tandaiturun catatan.md README.md        # buka dokumen di tab
 tandaiturun --export-pdf laporan.md     # → laporan.pdf, tata letak sama dengan aplikasi
+tandaiturun --export-pdf laporan.md --allow-remote-images   # sertakan gambar internet
 tandaiturun --export-html laporan.md hasil.html
 tandaiturun --version
 ```
@@ -166,18 +173,18 @@ tandaiturun --version
 
 ## Privasi
 
-TandaiTurun tidak membuat permintaan jaringan sama sekali. Gambar dari internet
-tidak dimuat (jadi dokumen tidak bisa dipakai untuk tahu bahwa kamu membukanya),
-tidak ada telemetri, tidak ada akun. Pengaturan disimpan di folder data aplikasi
-yang biasa dipakai sistemmu.
+TandaiTurun tidak membuat permintaan jaringan atas inisiatifnya sendiri: tanpa
+telemetri, tanpa cek update, tanpa akun. Gambar dari internet baru diunduh
+setelah kamu izinkan, karena memuatnya memberi tahu situs-situs itu bahwa kamu
+membuka dokumen. Pengaturan disimpan di folder data aplikasi yang biasa dipakai sistemmu.
 
 ## Perlu diketahui
 
-- Matematika (`$…$`) ditampilkan apa adanya, belum di-typeset.
+- Matematika mencakup mode math LaTeX. Perintah mode teks (`\section`, TikZ…)
+  tidak didukung; rumus yang tidak bisa disusun ditampilkan apa adanya.
 - Render Mermaid berasal dari proyek yang masih muda: kebanyakan diagram tampil
   benar, beberapa tata letak berbeda dari mermaid.js. Diagram yang gagal digambar
   ditampilkan sebagai kode dengan pesan error di atasnya.
-- Gambar dari internet tampil sebagai kotak berisi alamatnya.
 
 ## Struktur proyek
 
@@ -198,5 +205,6 @@ privat ([SECURITY.md](SECURITY.md)).
 
 TandaiTurun berlisensi ganda [MIT](LICENSE-MIT) atau
 [Apache-2.0](LICENSE-APACHE), silakan pilih. Huruf yang disertakan (Inter,
-Liberation Serif, JetBrains Mono, Noto Emoji, Noto Sans Symbols 2, Noto Sans Math)
+Liberation Serif, JetBrains Mono, Noto Emoji, Noto Sans Symbols 2, Noto Sans Math,
+STIX Two Math)
 berlisensi SIL Open Font License 1.1; lisensinya ada di [`assets/fonts`](assets/fonts).

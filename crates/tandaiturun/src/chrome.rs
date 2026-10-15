@@ -703,6 +703,39 @@ pub fn disk_banner(app: &mut App, ui: &mut egui::Ui) {
         });
 }
 
+/// Asks before loading internet images, which would tell their servers that
+/// the document was opened.
+pub fn remote_banner(app: &mut App, ui: &mut egui::Ui) {
+    let Some(d) = app.doc() else { return };
+    let blocked = d.active_view_ref().layout.as_ref().map_or(0, |l| l.remote_blocked);
+    if blocked == 0 || d.allow_remote || app.settings.remote_images {
+        return;
+    }
+    egui::Panel::top("remote")
+        .frame(egui::Frame::new().fill(Color32::from_rgb(0xFF, 0xF4, 0xCE)).inner_margin(Margin::symmetric(12, 6)))
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                let ink = Color32::from_rgb(0x5C, 0x46, 0x00);
+                ui.label(RichText::new("🌐").color(ink));
+                ui.label(
+                    RichText::new(trf(
+                        "This document has {n} images from the internet. Showing them lets those websites see that you opened it.",
+                        &[("n", &blocked.to_string())],
+                    ))
+                    .color(ink),
+                );
+                if ui.button(tr("Show images")).clicked() {
+                    if let Some(d) = app.doc_mut() {
+                        d.allow_remote = true;
+                    }
+                }
+                if ui.button(tr("Always show images")).clicked() {
+                    app.settings.remote_images = true;
+                }
+            });
+        });
+}
+
 pub fn status_bar(app: &mut App, ui: &mut egui::Ui) {
     let p = app.palette;
     let look = app.look();

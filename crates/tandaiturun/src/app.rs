@@ -44,6 +44,8 @@ pub struct Settings {
     pub restore_session: bool,
     pub session: Vec<PathBuf>,
     pub auto_reload: bool,
+    /// Load images from the internet without asking.
+    pub remote_images: bool,
 }
 
 impl Default for Settings {
@@ -65,13 +67,20 @@ impl Default for Settings {
             restore_session: true,
             session: Vec::new(),
             auto_reload: true,
+            remote_images: false,
         }
     }
 }
 
 impl Settings {
     pub fn look(&self) -> Look {
-        Look { page: self.page_size, font: self.doc_font, font_size: self.font_size, theme: self.page_theme }
+        Look {
+            page: self.page_size,
+            font: self.doc_font,
+            font_size: self.font_size,
+            theme: self.page_theme,
+            allow_remote: self.remote_images,
+        }
     }
 
     pub fn add_recent(&mut self, path: &Path) {
@@ -105,6 +114,8 @@ pub struct Doc {
     outline: (u64, Vec<Heading>),
     pub page_input: String,
     pub page_input_focus: bool,
+    /// Internet images were allowed for this document.
+    pub allow_remote: bool,
 }
 
 impl Doc {
@@ -132,6 +143,7 @@ impl Doc {
             outline: (0, Vec::new()),
             page_input: "1".into(),
             page_input_focus: false,
+            allow_remote: false,
         }
     }
 
@@ -488,7 +500,9 @@ impl App {
     fn pdf_bytes(&self, ctx: &egui::Context, i: usize) -> Vec<u8> {
         let d = &self.docs[i];
         let title = document::title(&d.text, d.path.as_deref());
-        crate::pdf::export(ctx, &d.text, &self.look(), d.base_dir(), &title)
+        let mut look = self.look();
+        look.allow_remote |= d.allow_remote;
+        crate::pdf::export(ctx, &d.text, &look, d.base_dir(), &title)
     }
 
     fn export_pdf(&mut self, ctx: &egui::Context, i: usize) {
@@ -957,8 +971,9 @@ impl App {
 
     /// Lays out the visible views for this frame.
     fn update_layouts(&mut self, ctx: &egui::Context) {
-        let look = self.look();
+        let mut look = self.look();
         let Some(d) = self.active.and_then(|i| self.docs.get_mut(i)) else { return };
+        look.allow_remote |= d.allow_remote;
         let base = d.base_dir();
         if d.editing {
             // Lay the preview out again shortly after typing stops (at once for short texts).
@@ -982,6 +997,11 @@ impl App {
             match e {
                 ViewEvent::Link(url) => self.open_link(&url),
                 ViewEvent::EditAt(offset) => self.actions.push(Action::EditAt(offset)),
+                ViewEvent::AllowRemote => {
+                    if let Some(d) = self.doc_mut() {
+                        d.allow_remote = true;
+                    }
+                }
             }
         }
     }
@@ -1038,6 +1058,7 @@ impl eframe::App for App {
                     crate::chrome::find_bar(self, ui);
                 }
                 crate::chrome::disk_banner(self, ui);
+                crate::chrome::remote_banner(self, ui);
                 crate::chrome::status_bar(self, ui);
                 crate::panes::nav_rail(self, ui);
                 if self.settings.show_nav {
@@ -1061,6 +1082,12 @@ impl eframe::App for App {
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         crate::scene::tick(self, &ctx);
+    }
+
+    /// Widget state (scroll positions…) is keyed by tab numbers, which mean
+    /// other documents in the next session: don't keep it.
+    fn persist_egui_memory(&self) -> bool {
+        false
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {

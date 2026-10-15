@@ -22,6 +22,9 @@ First release.
   simple HTML (`<img>`, `<br>`, `<mark>`, `<sub>`, `<sup>`) and
   `<!-- pagebreak -->`.
 - Mermaid diagrams, drawn natively with mermaid-rs-renderer.
+- LaTeX math (`$…$`, `$$…$$`) typeset with latex-rust, on screen and in PDF.
+- Internet images on request: a bar offers to show them for the document or
+  always; `--allow-remote-images` for `--export-pdf`.
 - Editor: Markdown colouring, live paginated preview that follows the cursor,
   formatting toolbar and shortcuts, list continuation and indentation, find and
   replace, undo/redo.

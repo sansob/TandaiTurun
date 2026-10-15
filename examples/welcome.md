@@ -20,6 +20,7 @@ a live preview beside it.
 - [x] Find text with `Ctrl+F`; every match is listed by page in the Search pane
 - [x] Select and copy text right on the page
 - [x] Draw diagrams from `mermaid` code blocks, no browser needed
+- [x] Typeset math: $e^{i\pi} + 1 = 0$
 - [x] Edit with a formatting toolbar, and see the pages update as you type
 - [x] Export to **PDF** (real text, clickable links, bookmarks) or **HTML**
 - [x] Print through your system's PDF viewer
@@ -58,9 +59,9 @@ Need a new page in the PDF? Put `<!-- pagebreak -->` on its own line.
 
 ## Your files stay yours
 
-TandaiTurun never uploads anything. Images from the internet aren't loaded
-either, so a document can't tell anyone that you opened it; images stored next
-to your file are shown as usual.
+TandaiTurun never uploads anything. Images from the internet are only loaded
+when you allow it, so a document can't tell anyone that you opened it; images
+stored next to your file are shown as usual.
 
 ---
 

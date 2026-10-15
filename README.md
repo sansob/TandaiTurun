@@ -64,8 +64,14 @@ means "down". Mark down.
 - **Mermaid diagrams** from ```` ```mermaid ```` blocks: flowcharts, sequence,
   class, state, ER, pie, Gantt, timeline, mindmap and more, drawn natively with
   [mermaid-rs-renderer](https://github.com/1jehuang/mermaid-rs-renderer), no browser.
+- **Math**: `$…$` inline and `$$…$$` display formulas, typeset with TeX's rules
+  by [latex-rust](https://github.com/jscarr64/LaTeX-Rust) (fractions, roots,
+  sums, integrals, matrices, Greek…). Inline formulas sit on the text baseline.
 - Images next to your document (PNG, JPEG, GIF, WebP, BMP, SVG), and simple HTML
   like `<img>`, `<br>`, `<mark>`, `<sub>`, `<sup>`.
+- **Internet images** are only loaded when you say so: a bar above the page
+  offers **Show images** (this document) or **Always show images**, and each
+  placeholder can be clicked. Preferences has the same switch.
 - YAML front matter is hidden from the page and shown in Document Properties.
 
 **Editing**
@@ -144,6 +150,7 @@ libraries; every desktop has them. To build you may need the development headers
 ```sh
 tandaiturun notes.md README.md          # open documents in tabs
 tandaiturun --export-pdf report.md      # → report.pdf, same layout as the app
+tandaiturun --export-pdf report.md --allow-remote-images   # include internet images
 tandaiturun --export-html report.md out.html
 tandaiturun --version
 ```
@@ -166,17 +173,18 @@ tandaiturun --version
 
 ## Privacy
 
-TandaiTurun makes no network requests. It doesn't load images from the
-internet (a document can't use them to see that you opened it), has no
-telemetry and no account. Settings live in your system's usual app-data folder.
+TandaiTurun makes no network requests of its own: no telemetry, no update
+checks, no account. Images from the internet are only downloaded after you
+allow it, because loading them tells those websites that you opened the
+document. Settings live in your system's usual app-data folder.
 
 ## Good to know
 
-- Math (`$…$`) is shown as written; it isn't typeset.
+- Math covers LaTeX math mode. Text-mode commands (`\section`, TikZ…) aren't
+  supported; a formula that can't be typeset is shown as written.
 - Mermaid rendering comes from a young project: most diagrams look right, some
   layouts differ from mermaid.js. A diagram it can't draw is shown as code with
   the error above it.
-- Remote images are shown as a placeholder with their address.
 
 ## Project layout
 
@@ -197,6 +205,7 @@ Bug reports, ideas, translations and code are welcome: see
 
 TandaiTurun is dual-licensed under [MIT](LICENSE-MIT) or
 [Apache-2.0](LICENSE-APACHE), at your option. The bundled fonts (Inter,
-Liberation Serif, JetBrains Mono, Noto Emoji, Noto Sans Symbols 2, Noto Sans Math)
+Liberation Serif, JetBrains Mono, Noto Emoji, Noto Sans Symbols 2, Noto Sans Math,
+STIX Two Math)
 are under the SIL Open Font License 1.1; their licences are in
 [`assets/fonts`](assets/fonts).

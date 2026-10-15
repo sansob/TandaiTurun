@@ -71,6 +71,8 @@ pub struct Params {
     pub zoom: f32,
     pub base_dir: Option<PathBuf>,
     pub pixels_per_point: f32,
+    /// Load images from the internet (the reader allowed it).
+    pub allow_remote: bool,
 }
 
 #[derive(Clone)]
@@ -112,6 +114,8 @@ pub enum Prim {
     Placeholder {
         rect: Rect,
         label: String,
+        /// An internet image waiting for permission: clicking it allows them.
+        remote: bool,
     },
     Check {
         rect: Rect,
@@ -157,6 +161,8 @@ pub struct Layout {
     pub blocks: Vec<(usize, f32)>,
     /// Some images are still loading: lay out again when they are ready.
     pub pending_images: bool,
+    /// Internet images not shown because they weren't allowed.
+    pub remote_blocked: usize,
 }
 
 impl Layout {
@@ -232,6 +238,14 @@ impl Layout {
         let local = flow - t.pos;
         let clamped = Vec2::new(local.x, local.y.clamp(0.0, (t.galley.size().y - 1.0).max(0.0)));
         Some((i, t.galley.cursor_from_pos(clamped).index.0))
+    }
+
+    /// Whether a flow position is over an internet image waiting for permission.
+    pub fn remote_placeholder_at(&self, page: usize, flow: Pos2) -> bool {
+        self.page_prims.get(page).is_some_and(|ids| {
+            ids.iter()
+                .any(|&i| matches!(&self.prims[i], Prim::Placeholder { rect, remote: true, .. } if rect.contains(flow)))
+        })
     }
 
     /// The link under a flow position, if any.
@@ -341,6 +355,15 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// A laid-out run of inline content: the job, its links and its formulas.
+type InlineJob = (LayoutJob, Vec<(Range<usize>, String)>, Vec<MathSpot>);
+
+/// STIX Two Math has smaller letters than Inter at the same size.
+const MATH_SCALE: f32 = 1.12;
+
+/// A formula in a text galley: (char index of its placeholder, formula, text size).
+type MathSpot = (usize, std::sync::Arc<crate::math::Formula>, f32);
+
 struct Ctx {
     tight: bool,
     color: Color32,
@@ -369,6 +392,7 @@ struct Builder<'a> {
     blocks: Vec<(usize, f32)>,
     top_mark: Option<usize>,
     pending_images: bool,
+    remote_blocked: usize,
 }
 
 impl Builder<'_> {
@@ -427,8 +451,15 @@ impl Builder<'_> {
         bold_all: bool,
         width: f32,
     ) -> (LayoutJob, Vec<(Range<usize>, String)>) {
+        let (job, links, _) = self.inline_job_math(inlines, size, color, bold_all, width);
+        (job, links)
+    }
+
+    /// Like `inline_job`, plus the formulas: (character index of their placeholder, formula, text size).
+    fn inline_job_math(&self, inlines: &[Inline], size: f32, color: Color32, bold_all: bool, width: f32) -> InlineJob {
         let mut job = LayoutJob::default();
         let mut links: Vec<(Range<usize>, String)> = Vec::new();
+        let mut maths: Vec<MathSpot> = Vec::new();
         for i in inlines {
             match i {
                 Inline::Span(sp) => {
@@ -450,10 +481,75 @@ impl Builder<'_> {
                         self.format(SpanStyle { italic: true, ..Default::default() }, size, self.c.muted, false, false);
                     job.append(&format!("[{alt}]"), 0.0, fmt);
                 }
+                Inline::Math { tex, display } => match crate::math::formula(self.egui, tex, *display, color) {
+                    Ok(fm) => {
+                        // A no-break space, with leading space up to the formula's width,
+                        // holds its place in the line.
+                        let mut fmt = self.format(SpanStyle::default(), size, color, false, false);
+                        let space = self.egui.fonts_mut(|f| f.glyph_width(&fmt.font_id, '\u{a0}'));
+                        let lead = (fm.width * size * MATH_SCALE - space).max(0.0);
+                        let tall = (fm.height + fm.depth) * size * MATH_SCALE;
+                        fmt.line_height = Some((size * 1.55).max(tall * 1.2 + size * 0.2));
+                        maths.push((job.text.chars().count(), fm, size * MATH_SCALE));
+                        job.append("\u{a0}", lead, fmt);
+                    }
+                    Err(_) => {
+                        let fence = if *display { "$$" } else { "$" };
+                        let st = SpanStyle { code: true, ..Default::default() };
+                        job.append(
+                            &format!("{fence}{tex}{fence}"),
+                            0.0,
+                            self.format(st, size, self.c.muted, false, false),
+                        );
+                    }
+                },
             }
         }
         job.wrap.max_width = width.max(10.0);
-        (job, links)
+        (job, links, maths)
+    }
+
+    /// Images for the formulas of a galley placed at `pos`, sitting on their baseline.
+    fn place_math(&mut self, pos: Pos2, galley: &Galley, maths: Vec<MathSpot>) {
+        let spots: Vec<usize> = maths.iter().map(|m| m.0).collect();
+        for (ci, fm, size) in maths {
+            let mut seen = 0;
+            for row in &galley.rows {
+                let n = row.glyphs.len();
+                if ci < seen + n {
+                    let k = ci - seen;
+                    let g = &row.glyphs[k];
+                    // The gap starts where the previous glyph ends (the extra
+                    // spacing may sit before or after the placeholder glyph).
+                    let gap_start = if k > 0 {
+                        let p = &row.glyphs[k - 1];
+                        p.pos.x + p.advance_width
+                    } else {
+                        0.0
+                    };
+                    let gap_end = g.pos.x + g.advance_width;
+                    let x = pos.x + row.pos.x + gap_start + ((gap_end - gap_start) - fm.width * size).max(0.0) / 2.0;
+                    // The text baseline of the row: egui puts the taller placeholder's
+                    // own baseline higher up, so take it from another glyph.
+                    let other = (0..n).find(|&j| !spots.contains(&(seen + j)) && !row.glyphs[j].chr.is_whitespace());
+                    let baseline = match other {
+                        Some(j) => pos.y + row.pos.y + row.glyphs[j].pos.y,
+                        None => {
+                            let total = (fm.height + fm.depth) * size;
+                            pos.y + row.pos.y + (row.size.y - total) / 2.0 + fm.height * size
+                        }
+                    };
+                    let _ = g.pos.y;
+                    let rect = Rect::from_min_size(
+                        Pos2::new(x, baseline - fm.height * size),
+                        Vec2::new(fm.width * size, (fm.height + fm.depth) * size),
+                    );
+                    self.prims.push(Prim::Image { rect, uri: fm.uri.clone(), link: None });
+                    break;
+                }
+                seen += row.char_count_including_newline().0;
+            }
+        }
     }
 
     fn galley(&self, job: LayoutJob) -> Arc<Galley> {
@@ -520,9 +616,26 @@ impl Builder<'_> {
                     self.image(url, alt, link.clone(), x, w);
                     return;
                 }
+                let visible: Vec<&Inline> =
+                    inl.iter().filter(|i| !matches!(i, Inline::Span(sp) if sp.text.trim().is_empty())).collect();
+                if let [Inline::Math { tex, display: true }] = visible.as_slice() {
+                    if let Ok(fm) = crate::math::formula(self.egui, tex, true, cx.color) {
+                        self.begin(0.9 * s);
+                        let mut size = Vec2::new(fm.width, fm.height + fm.depth) * s * MATH_SCALE;
+                        if size.x > w {
+                            size *= w / size.x;
+                        }
+                        let rect = Rect::from_min_size(Pos2::new(x + (w - size.x) / 2.0, self.y), size);
+                        self.prims.push(Prim::Image { rect, uri: fm.uri.clone(), link: None });
+                        self.y += size.y;
+                        self.pending = 0.9 * s;
+                        return;
+                    }
+                }
                 self.begin(0.8 * s);
-                let (job, links) = self.inline_job(inl, s, cx.color, false, w);
+                let (job, links, maths) = self.inline_job_math(inl, s, cx.color, false, w);
                 let g = self.galley(job);
+                self.place_math(Pos2::new(x, self.y), &g, maths);
                 self.y += self.place_text(x, g, links, true);
                 self.pending = if cx.tight { 0.25 * s } else { 0.8 * s };
             }
@@ -542,11 +655,13 @@ impl Builder<'_> {
                     self.anchors.insert(a.clone(), self.y);
                 }
                 let color = if *level >= 6 { self.c.muted } else { self.c.heading };
-                let (mut job, links) = self.inline_job(inlines, s * f, color, true, w);
+                let (mut job, links, maths) = self.inline_job_math(inlines, s * f, color, true, w);
                 for sec in &mut job.sections {
-                    sec.format.line_height = Some(s * f * 1.3);
+                    let lh = sec.format.line_height.unwrap_or(0.0);
+                    sec.format.line_height = Some(if lh > s * f * 1.56 { lh } else { s * f * 1.3 });
                 }
                 let g = self.galley(job);
+                self.place_math(Pos2::new(x, self.y), &g, maths);
                 self.y += self.place_text(x, g, links, true);
                 if *level <= 2 {
                     self.y += 0.3 * s;
@@ -787,10 +902,11 @@ impl Builder<'_> {
         for (ri, (r, is_head)) in all_rows.enumerate() {
             let mut galleys = Vec::with_capacity(ncols);
             for (c, cw) in widths.iter().enumerate() {
-                let (job, links) = self.inline_job(cell(r, c, &empty), size, cx.color, is_head, cw - 2.0 * padx);
-                galleys.push((self.galley(job), links));
+                let (job, links, maths) =
+                    self.inline_job_math(cell(r, c, &empty), size, cx.color, is_head, cw - 2.0 * padx);
+                galleys.push((self.galley(job), links, maths));
             }
-            let row_h = galleys.iter().map(|(g, _)| g.size().y).fold(0.0, f32::max) + 2.0 * pady;
+            let row_h = galleys.iter().map(|(g, _, _)| g.size().y).fold(0.0, f32::max) + 2.0 * pady;
             if ri > 0 {
                 self.add_break(self.y);
             }
@@ -806,7 +922,7 @@ impl Builder<'_> {
                 self.prims.push(Prim::Rect { rect, fill, stroke: Stroke::NONE, radius: 0.0 });
             }
             let mut cx_x = x;
-            for (c, (g, links)) in galleys.into_iter().enumerate() {
+            for (c, (g, links, maths)) in galleys.into_iter().enumerate() {
                 let cw = widths[c];
                 let gx = match aligns.get(c) {
                     Some(Alignment::Center) => cx_x + (cw - g.size().x) / 2.0,
@@ -815,12 +931,10 @@ impl Builder<'_> {
                 };
                 let rect = Rect::from_min_size(Pos2::new(cx_x, self.y), Vec2::new(cw, row_h));
                 self.prims.push(Prim::Rect { rect, fill: Color32::TRANSPARENT, stroke: border, radius: 0.0 });
-                self.prims.push(Prim::Text(TextPrim {
-                    pos: Pos2::new(gx, self.y + pady),
-                    galley: g,
-                    links,
-                    selectable: true,
-                }));
+                // Cells are centred vertically in their row.
+                let gy = self.y + (row_h - g.size().y) / 2.0;
+                self.place_math(Pos2::new(gx, gy), &g, maths);
+                self.prims.push(Prim::Text(TextPrim { pos: Pos2::new(gx, gy), galley: g, links, selectable: true }));
                 cx_x += cw;
             }
             self.y += row_h;
@@ -831,12 +945,29 @@ impl Builder<'_> {
     fn image(&mut self, url: &str, alt: &str, link: Option<String>, x: f32, w: f32) {
         let s = self.s;
         self.begin(0.8 * s);
-        let placeholder = |b: &mut Self, label: String, h: f32| {
-            let rect = Rect::from_min_size(Pos2::new(x, b.y), Vec2::new(w.min(360.0 * b.z), h));
-            b.prims.push(Prim::Placeholder { rect, label });
+        let placeholder = |b: &mut Self, label: String, h: f32, remote: bool| {
+            let rect = Rect::from_min_size(Pos2::new(x, b.y), Vec2::new(w.min(420.0 * b.z), h));
+            b.prims.push(Prim::Placeholder { rect, label, remote });
             b.y += h;
         };
-        match resolve_image(url, self.p.base_dir.as_deref()) {
+        let source = match resolve_image(url, self.p.base_dir.as_deref()) {
+            ImageSource::Remote if self.p.allow_remote => match crate::remote::image(self.egui, url) {
+                crate::remote::State::Ready { uri, .. } => ImageSource::Local(uri),
+                crate::remote::State::Loading => {
+                    self.pending_images = true;
+                    placeholder(self, format!("⏳ {alt}"), 2.6 * s, false);
+                    self.pending = 0.8 * s;
+                    return;
+                }
+                crate::remote::State::Failed(e) => {
+                    placeholder(self, format!("🌐 {alt} · {e}"), 2.6 * s, false);
+                    self.pending = 0.8 * s;
+                    return;
+                }
+            },
+            other => other,
+        };
+        match source {
             ImageSource::Local(uri) => {
                 let poll = self.egui.try_load_texture(&uri, Default::default(), egui::SizeHint::default());
                 match poll {
@@ -855,16 +986,19 @@ impl Builder<'_> {
                     }
                     Ok(egui::load::TexturePoll::Pending { .. }) => {
                         self.pending_images = true;
-                        placeholder(self, format!("⏳ {alt}"), 120.0 * self.z);
+                        placeholder(self, format!("⏳ {alt}"), 120.0 * self.z, false);
                     }
-                    Err(_) => placeholder(self, format!("🖼 {alt} ({url})"), 2.6 * s),
+                    Err(_) => placeholder(self, format!("🖼 {alt} ({url})"), 2.6 * s, false),
                 }
             }
             ImageSource::Remote => {
-                let label = if alt.is_empty() { url.to_string() } else { format!("{alt} · {url}") };
-                placeholder(self, format!("🌐 {label}"), 2.6 * s);
+                self.remote_blocked += 1;
+                let host = url.split("://").nth(1).unwrap_or(url).split('/').next().unwrap_or(url);
+                let what = if alt.is_empty() { host.to_string() } else { format!("{alt} · {host}") };
+                let label = format!("🌐 {what}  ·  {}", crate::i18n::tr("Click to show internet images"));
+                placeholder(self, label, 2.6 * s, true);
             }
-            ImageSource::Missing => placeholder(self, format!("🖼 {alt} ({url})"), 2.6 * s),
+            ImageSource::Missing => placeholder(self, format!("🖼 {alt} ({url})"), 2.6 * s, false),
         }
         self.pending = 0.8 * s;
     }
@@ -946,6 +1080,7 @@ pub fn layout_blocks(
         blocks: Vec::new(),
         top_mark: None,
         pending_images: false,
+        remote_blocked: 0,
     };
     let mut cx = Ctx { tight: false, color: b.c.text, size_factor: 1.0, list_depth: 0 };
     for t in top {
@@ -982,6 +1117,7 @@ pub fn layout_blocks(
         anchors: b.anchors,
         blocks: b.blocks,
         pending_images: b.pending_images,
+        remote_blocked: b.remote_blocked,
     }
 }
 
@@ -1039,6 +1175,7 @@ pub(crate) mod tests {
             zoom,
             base_dir: None,
             pixels_per_point: 1.0,
+            allow_remote: false,
         }
     }
 
