@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-15
+
+### Added
+- Right-click a tab: Close, Close Others, Close Tabs to the Right, Close All,
+  Copy Path, Show in Folder.
+- Menu bar: while a menu is open, pointing at another title opens that one,
+  like native menus.
+
+### Changed
+- New app icon: a page with "#tt" on the red badge.
+
+### Fixed
+- The ✕ on a tab didn't close it.
+- Windows: paths showed a `\\?\` prefix (status bar, Recent, Properties), and
+  images next to a document could fail to load because of it.
+- Windows: making TandaiTurun the default app flashed console windows.
+
 ## [0.1.0] - 2026-10-15
 
 First release.
@@ -41,5 +58,6 @@ First release.
 - Packages: Windows installer and zip, macOS universal `.dmg`, `.deb`, `.rpm`,
   AppImage and `.tar.gz`, built and tested by GitHub Actions.
 
-[Unreleased]: https://github.com/sansob/TandaiTurun/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/sansob/TandaiTurun/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/sansob/TandaiTurun/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/sansob/TandaiTurun/releases/tag/v0.1.0

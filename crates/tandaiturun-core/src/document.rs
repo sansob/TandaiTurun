@@ -76,6 +76,28 @@ pub fn save(path: &Path, text: &str, line_ending: LineEnding, bom: bool) -> io::
     write_atomic(path, &encode(text, line_ending, bom))
 }
 
+/// Drops the Windows "verbatim" prefix `canonicalize` adds: `\\?\D:\x` → `D:\x`,
+/// `\\?\UNC\server\share` → `\\server\share`. Other paths are returned as they are.
+pub fn simplify(path: PathBuf) -> PathBuf {
+    let Some(s) = path.to_str() else { return path };
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        // Only drive paths: `\\?\Volume{…}` has no simpler form.
+        let b = rest.as_bytes();
+        if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+            return PathBuf::from(rest);
+        }
+    }
+    path
+}
+
+/// `fs::canonicalize` without the Windows verbatim prefix; the path itself if it fails.
+pub fn canonical(path: &Path) -> PathBuf {
+    simplify(fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
+}
+
 /// Gives `path` a Markdown extension when it has none ("notes" → "notes.md").
 pub fn with_md_extension(path: PathBuf) -> PathBuf {
     if path.extension().is_some() {
@@ -162,6 +184,14 @@ mod tests {
         assert_eq!(front_matter("---\na: 1\n---\nbody"), Some("a: 1"));
         assert_eq!(front_matter("---\na: 1\n---"), Some("a: 1"));
         assert_eq!(front_matter("# no"), None);
+    }
+
+    #[test]
+    fn verbatim_prefixes_are_dropped() {
+        assert_eq!(simplify(PathBuf::from(r"\\?\D:\Dolphin\a.md")), PathBuf::from(r"D:\Dolphin\a.md"));
+        assert_eq!(simplify(PathBuf::from(r"\\?\UNC\srv\share\a.md")), PathBuf::from(r"\\srv\share\a.md"));
+        assert_eq!(simplify(PathBuf::from(r"\\?\Volume{x}\a.md")), PathBuf::from(r"\\?\Volume{x}\a.md"));
+        assert_eq!(simplify(PathBuf::from("/home/a.md")), PathBuf::from("/home/a.md"));
     }
 
     #[test]

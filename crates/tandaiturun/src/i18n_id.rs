@@ -231,6 +231,10 @@ pub const ENTRIES: &[(&str, &str)] = &[
     ("Always show images", "Selalu tampilkan gambar"),
     ("Internet images", "Gambar internet"),
     ("Show images from the internet without asking", "Tampilkan gambar dari internet tanpa bertanya"),
+    ("Close Others", "Tutup Lainnya"),
+    ("Close Tabs to the Right", "Tutup Tab di Kanan"),
+    ("Copy Path", "Salin Path"),
+    ("Show in Folder", "Tampilkan di Folder"),
 ];
 
 /// Text that is the same in both languages.

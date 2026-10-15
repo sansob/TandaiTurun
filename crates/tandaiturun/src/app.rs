@@ -199,7 +199,10 @@ pub enum Action {
     New,
     Open,
     OpenPath(PathBuf),
-    OpenText { title: String, text: String },
+    OpenText {
+        title: String,
+        text: String,
+    },
     Save,
     SaveAs,
     Reload,
@@ -207,6 +210,10 @@ pub enum Action {
     ExportHtml,
     Print,
     Close(u64),
+    /// Close every tab but this one.
+    CloseOthers(u64),
+    /// Close the tabs after this one.
+    CloseRight(u64),
     CloseAll,
     Quit,
     ToggleEdit,
@@ -273,7 +280,15 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, files: Vec<PathBuf>) -> App {
-        let settings: Settings = cc.storage.and_then(|s| eframe::get_value(s, "settings")).unwrap_or_default();
+        let mut settings: Settings = cc.storage.and_then(|s| eframe::get_value(s, "settings")).unwrap_or_default();
+        // 0.1.0 saved Windows paths with the `\\?\` prefix.
+        for list in [&mut settings.recent, &mut settings.session] {
+            for p in list.iter_mut() {
+                *p = document::simplify(std::mem::take(p));
+            }
+            let mut seen = std::collections::HashSet::new();
+            list.retain(|p| seen.insert(p.clone()));
+        }
         i18n::set(settings.lang.unwrap_or_else(Lang::from_system));
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         let mut app = App {
@@ -350,7 +365,7 @@ impl App {
     }
 
     pub fn open_path(&mut self, path: &Path) {
-        let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let path = document::canonical(path);
         if let Some(i) = self.docs.iter().position(|d| d.path.as_deref() == Some(&path)) {
             self.active = Some(i);
             return;
@@ -476,6 +491,18 @@ impl App {
     pub fn close_uids(&mut self, uids: &[u64]) {
         for uid in uids {
             self.close(*uid, true);
+        }
+    }
+
+    /// Closes the tabs `which` picks; unsaved ones are asked about first.
+    fn close_many(&mut self, which: impl Fn(usize, &Doc) -> bool) {
+        let picked: Vec<(u64, bool)> =
+            self.docs.iter().enumerate().filter(|(i, d)| which(*i, d)).map(|(_, d)| (d.uid, d.dirty())).collect();
+        let clean: Vec<u64> = picked.iter().filter(|(_, dirty)| !dirty).map(|(u, _)| *u).collect();
+        let dirty: Vec<u64> = picked.iter().filter(|(_, dirty)| *dirty).map(|(u, _)| *u).collect();
+        self.close_uids(&clean);
+        if !dirty.is_empty() {
+            self.dialog = Some(Dialog::ConfirmClose { uids: dirty, quit: false });
         }
     }
 
@@ -628,13 +655,11 @@ impl App {
                     }
                 }
                 Action::Close(uid) => self.close(uid, false),
-                Action::CloseAll => {
-                    let dirty: Vec<u64> = self.docs.iter().filter(|d| d.dirty()).map(|d| d.uid).collect();
-                    let clean: Vec<u64> = self.docs.iter().filter(|d| !d.dirty()).map(|d| d.uid).collect();
-                    self.close_uids(&clean);
-                    if !dirty.is_empty() {
-                        self.dialog = Some(Dialog::ConfirmClose { uids: dirty, quit: false });
-                    }
+                Action::CloseAll => self.close_many(|_, _| true),
+                Action::CloseOthers(uid) => self.close_many(|_, d| d.uid != uid),
+                Action::CloseRight(uid) => {
+                    let at = self.docs.iter().position(|d| d.uid == uid).unwrap_or(usize::MAX);
+                    self.close_many(|i, _| i > at);
                 }
                 Action::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
                 Action::ToggleEdit => self.toggle_edit(),
@@ -1010,10 +1035,6 @@ impl App {
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_files();
-        if !self.inject_keys.is_empty() {
-            let keys = std::mem::take(&mut self.inject_keys);
-            ctx.input_mut(|i| i.events.extend(keys));
-        }
         ctx.request_repaint_after(Duration::from_millis(1000));
     }
 
@@ -1082,6 +1103,12 @@ impl eframe::App for App {
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         crate::scene::tick(self, &ctx);
+    }
+
+    /// Events the app sends itself (menu Undo/Redo, scripted scenes), fed in
+    /// as real input so egui handles them like the user's own.
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        raw_input.events.append(&mut self.inject_keys);
     }
 
     /// Widget state (scroll positions…) is keyed by tab numbers, which mean
