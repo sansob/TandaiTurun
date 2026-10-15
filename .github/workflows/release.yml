@@ -193,7 +193,7 @@ jobs:
 
           Verify downloads with `SHA256SUMS.txt`. Builds are not code-signed yet: macOS and Windows ask once before the first start.
           NOTES
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.meta.outputs.tag }}
           name: TandaiTurun ${{ needs.meta.outputs.version }}
