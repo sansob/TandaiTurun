@@ -576,7 +576,7 @@ impl DocView {
                 }
             }
             if self.tool == Tool::Hand && resp.dragged_by(egui::PointerButton::Primary) {
-                ui.scroll_with_delta(resp.drag_delta());
+                ui.scroll_with_delta_animation(resp.drag_delta(), egui::style::ScrollAnimation::none());
             }
             if self.tool == Tool::Select {
                 if resp.drag_started_by(egui::PointerButton::Primary) {
