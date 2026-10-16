@@ -210,6 +210,10 @@ pub fn menu_bar(app: &mut App, ui: &mut egui::Ui) {
                         if item(ui, tr("Source Code on GitHub"), "") {
                             let _ = webbrowser::open("https://github.com/sansob/TandaiTurun");
                         }
+                        if item(ui, tr("Check for Updates…"), "") {
+                            crate::update::start(ui.ctx(), true);
+                            app.toast(tr("Checking for updates…"));
+                        }
                         if item(ui, tr("Report a Problem"), "") {
                             let _ = webbrowser::open("https://github.com/sansob/TandaiTurun/issues");
                         }
