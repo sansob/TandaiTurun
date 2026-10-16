@@ -479,14 +479,12 @@ impl DocView {
         if let Some(o) = offset {
             area = area.scroll_offset(Vec2::new(o.x.max(0.0), o.y.max(0.0)));
         }
-        if self.tool == Tool::Hand {
-            area = area.scroll_source(egui::containers::scroll_area::ScrollSource::ALL);
-        } else {
-            area = area.scroll_source(
-                egui::containers::scroll_area::ScrollSource::SCROLL_BAR
-                    | egui::containers::scroll_area::ScrollSource::MOUSE_WHEEL,
-            );
-        }
+        // The canvas senses drags itself, which hides them from the area's own
+        // drag-to-scroll, so the Hand tool pans by hand below.
+        area = area.scroll_source(
+            egui::containers::scroll_area::ScrollSource::SCROLL_BAR
+                | egui::containers::scroll_area::ScrollSource::MOUSE_WHEEL,
+        );
         let colors = l.params.theme.colors();
         let out = area.show_viewport(ui, |ui, viewport| {
             let (canvas_rect, resp) = ui.allocate_exact_size(canvas, Sense::click_and_drag());
@@ -576,6 +574,9 @@ impl DocView {
                 } else if !ui.input(|i| i.modifiers.shift) {
                     self.selection = None;
                 }
+            }
+            if self.tool == Tool::Hand && resp.dragged_by(egui::PointerButton::Primary) {
+                ui.scroll_with_delta(resp.drag_delta());
             }
             if self.tool == Tool::Select {
                 if resp.drag_started_by(egui::PointerButton::Primary) {
