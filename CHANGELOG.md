@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-16
+
 ### Added
 - Update check: at start-up TandaiTurun asks GitHub for the latest release and,
   when there's a newer one, recommends it (Download opens the release page;
@@ -107,7 +109,8 @@ First release.
 - Packages: Windows installer and zip, macOS universal `.dmg`, `.deb`, `.rpm`,
   AppImage and `.tar.gz`, built and tested by GitHub Actions.
 
-[Unreleased]: https://github.com/sansob/TandaiTurun/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/sansob/TandaiTurun/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/sansob/TandaiTurun/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/sansob/TandaiTurun/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/sansob/TandaiTurun/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/sansob/TandaiTurun/releases/tag/v0.1.0
