@@ -751,7 +751,7 @@ dependencies = [
  "ecolor",
  "emath",
  "font-types 0.12.6",
- "harfrust",
+ "harfrust 0.12.0",
  "log",
  "nohash-hasher",
  "parking_lot",
@@ -1165,6 +1165,18 @@ dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
  "read-fonts 0.41.0",
+ "smallvec",
+]
+
+[[package]]
+name = "harfrust"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86aa776d6d32b072119e1f1650f4db843ff4382a4aaa6a2c9c4e35703cd377cb"
+dependencies = [
+ "bitflags 2.13.2",
+ "bytemuck",
+ "read-fonts 0.45.0",
  "smallvec",
 ]
 
@@ -2460,6 +2472,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "read-fonts"
+version = "0.45.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a5b7bed3d16ab428d8fa533640ab805ff50e7ad8a4d00649de1259e70023282"
+dependencies = [
+ "bytemuck",
+ "font-types 0.12.6",
+ "once_cell",
+ "yoke",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3145,7 +3169,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_extras",
- "harfrust",
+ "harfrust 0.14.0",
  "image",
  "latex-rust",
  "mermaid-rs-renderer",
@@ -3510,7 +3534,7 @@ dependencies = [
  "base64",
  "data-url",
  "fontdb 0.24.0",
- "harfrust",
+ "harfrust 0.12.0",
  "imagesize",
  "kurbo",
  "log",
