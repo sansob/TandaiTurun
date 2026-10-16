@@ -116,6 +116,47 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             });
             keep = !(r.inner || r.should_close());
         }
+        Dialog::Update(release) => {
+            let r = egui::Modal::new(Id::new("update")).frame(f).show(ctx, |ui| {
+                ui.set_max_width(440.0);
+                ui.label(RichText::new(tr("Update available")).size(18.0).strong());
+                ui.add_space(6.0);
+                ui.label(trf(
+                    "TandaiTurun {new} is out. You have {current}.",
+                    &[("new", &release.version), ("current", env!("CARGO_PKG_VERSION"))],
+                ));
+                ui.label(tr("The download page opens in your browser."));
+                ui.add_space(12.0);
+                let mut choice = None;
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(egui::Button::new(RichText::new(tr("Download")).color(egui::Color32::WHITE)).fill(ACCENT))
+                        .clicked()
+                    {
+                        choice = Some(0);
+                    }
+                    if ui.button(tr("Later")).clicked() {
+                        choice = Some(1);
+                    }
+                    if ui.button(tr("Skip This Version")).clicked() {
+                        choice = Some(2);
+                    }
+                });
+                choice
+            });
+            match r.inner {
+                Some(0) => {
+                    let _ = webbrowser::open(&release.url);
+                    keep = false;
+                }
+                Some(2) => {
+                    app.settings.skipped_version = Some(release.version.clone());
+                    keep = false;
+                }
+                Some(_) => keep = false,
+                None => keep = !r.should_close(),
+            }
+        }
     }
     if keep && app.dialog.is_none() {
         app.dialog = Some(dialog);
@@ -241,6 +282,9 @@ fn preferences(app: &mut App, ui: &mut egui::Ui) -> bool {
         ui.end_row();
         ui.label(tr("Internet images"));
         ui.checkbox(&mut s.remote_images, tr("Show images from the internet without asking"));
+        ui.end_row();
+        ui.label(tr("Updates"));
+        ui.checkbox(&mut s.check_updates, tr("Check for updates when TandaiTurun starts"));
         ui.end_row();
         ui.label(tr("Default app"));
         if ui.button(tr("Make TandaiTurun the default app for .md files")).clicked() {

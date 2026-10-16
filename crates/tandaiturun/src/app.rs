@@ -46,6 +46,10 @@ pub struct Settings {
     pub auto_reload: bool,
     /// Load images from the internet without asking.
     pub remote_images: bool,
+    /// Look for a newer release on GitHub at start-up.
+    pub check_updates: bool,
+    /// A release the reader chose to skip; not recommended again at start-up.
+    pub skipped_version: Option<String>,
 }
 
 impl Default for Settings {
@@ -68,6 +72,8 @@ impl Default for Settings {
             session: Vec::new(),
             auto_reload: true,
             remote_images: false,
+            check_updates: true,
+            skipped_version: None,
         }
     }
 }
@@ -252,6 +258,8 @@ pub enum Dialog {
         filter: String,
     },
     Error(String),
+    /// A newer release is out.
+    Update(crate::update::Release),
 }
 
 pub struct Toast {
@@ -328,11 +336,38 @@ impl App {
         for f in to_open {
             app.open_path(&f);
         }
+        // Scripted runs (tests, screenshots) stay offline and undisturbed.
+        let scripted =
+            std::env::var_os("TANDAITURUN_SCRIPT").is_some() || std::env::var_os("TANDAITURUN_SCENE").is_some();
+        if app.settings.check_updates && !scripted {
+            crate::update::start(&cc.egui_ctx, false);
+        }
         app
     }
 
     pub fn look(&self) -> Look {
         self.settings.look()
+    }
+
+    /// Shows the result of an update check once it is in. A check at start-up
+    /// only speaks up for a release the reader hasn't skipped.
+    fn poll_update(&mut self) {
+        if self.dialog.is_some() {
+            return;
+        }
+        let Some((outcome, manual)) = crate::update::take() else { return };
+        match outcome {
+            crate::update::Outcome::Newer(r) => {
+                if manual || self.settings.skipped_version.as_deref() != Some(r.version.as_str()) {
+                    self.dialog = Some(Dialog::Update(r));
+                }
+            }
+            crate::update::Outcome::UpToDate if manual => self.toast(tr("TandaiTurun is up to date.")),
+            crate::update::Outcome::Failed(e) if manual => {
+                self.dialog = Some(Dialog::Error(trf("Couldn't check for updates: {error}", &[("error", &e)])))
+            }
+            _ => {}
+        }
     }
 
     pub fn toast(&mut self, text: impl Into<String>) {
@@ -1136,6 +1171,7 @@ impl eframe::App for App {
         crate::dialogs::toasts(self, &ctx);
         self.handle_dropped_files(&ctx);
         self.apply_actions(&ctx);
+        self.poll_update();
         let title = match self.doc() {
             Some(d) => format!("{}{} - TandaiTurun", if d.dirty() { "● " } else { "" }, d.name()),
             None => "TandaiTurun".to_string(),

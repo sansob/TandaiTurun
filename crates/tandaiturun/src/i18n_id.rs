@@ -236,6 +236,18 @@ pub const ENTRIES: &[(&str, &str)] = &[
     ("Close Tabs to the Right", "Tutup Tab di Kanan"),
     ("Copy Path", "Salin Path"),
     ("Show in Folder", "Tampilkan di Folder"),
+    ("TandaiTurun is up to date.", "TandaiTurun sudah versi terbaru."),
+    ("Couldn't check for updates: {error}", "Gagal memeriksa pembaruan: {error}"),
+    ("Update available", "Pembaruan tersedia"),
+    ("TandaiTurun {new} is out. You have {current}.", "TandaiTurun {new} sudah rilis. Versimu {current}."),
+    ("The download page opens in your browser.", "Halaman unduhan akan dibuka di browser."),
+    ("Download", "Unduh"),
+    ("Later", "Nanti"),
+    ("Skip This Version", "Lewati Versi Ini"),
+    ("Updates", "Pembaruan"),
+    ("Check for updates when TandaiTurun starts", "Periksa pembaruan saat TandaiTurun dibuka"),
+    ("Check for Updates…", "Periksa Pembaruan…"),
+    ("Checking for updates…", "Memeriksa pembaruan…"),
 ];
 
 /// Text that is the same in both languages.

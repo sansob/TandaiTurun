@@ -7,6 +7,7 @@
 //!   wait N            let N frames pass
 //!   move X Y          move the pointer
 //!   click X Y         left click (also `rclick`, `mclick`, `dclick`)
+//!   drag X1 Y1 X2 Y2  press, move to X2 Y2 over a few frames, release
 //!   key SPEC          a key with modifiers: `ctrl+shift+s`, `enter`, `f3`
 //!   type TEXT         type text
 //!   paste TEXT        paste text
@@ -84,6 +85,7 @@ fn describe(app: &App) -> String {
         Some(Dialog::Shortcuts) => "shortcuts".into(),
         Some(Dialog::About { tab, .. }) => format!("about {tab:?}"),
         Some(Dialog::Error(e)) => format!("error: {e}"),
+        Some(Dialog::Update(r)) => format!("update {}", r.version),
     };
     s += &format!("active: {:?}\ndocs: {}\ndialog: {dialog}\n", app.active, app.docs.len());
     s += &format!(
@@ -183,6 +185,15 @@ pub fn tick(app: &mut App, ctx: &egui::Context) {
                 sc.later.push(vec![button(x, y, b, true)]);
                 sc.later.push(vec![button(x, y, b, false)]);
             }
+        }
+        "drag" => {
+            let (a, b) = (egui::pos2(num(0), num(1)), egui::pos2(num(2), num(3)));
+            let p = egui::PointerButton::Primary;
+            ev.extend([egui::Event::PointerMoved(a), button(a.x, a.y, p, true)]);
+            for i in 1..=10 {
+                sc.later.push(vec![egui::Event::PointerMoved(a.lerp(b, i as f32 / 10.0))]);
+            }
+            sc.later.push(vec![button(b.x, b.y, p, false)]);
         }
         "key" => {
             let (m, k) = modifiers(rest);

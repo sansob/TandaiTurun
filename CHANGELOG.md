@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Update check: at start-up TandaiTurun asks GitHub for the latest release and,
+  when there's a newer one, recommends it (Download opens the release page;
+  Later; Skip This Version). Help → Check for Updates… checks on demand, and
+  Preferences can turn the start-up check off.
+
+### Fixed
+- The Hand tool didn't drag the pages.
+
 ## [0.1.2] - 2026-10-15
 
 ### Added

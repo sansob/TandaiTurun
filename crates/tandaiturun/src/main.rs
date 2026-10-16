@@ -21,6 +21,7 @@ mod remote;
 mod scene;
 mod script;
 mod theme;
+mod update;
 mod view;
 
 use std::path::PathBuf;
